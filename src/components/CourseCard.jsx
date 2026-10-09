@@ -1,0 +1,89 @@
+import { fmtClassSchedule, fmtDateTime, daysUntil } from '../lib/format';
+import { gradeLabel } from '../lib/grade';
+
+const STATUS = {
+  open: { label: '접수가능', cls: 'open' },
+  upcoming: { label: '접수예정', cls: 'upcoming' },
+  waitlist: { label: '대기접수', cls: 'closed' },
+  closed: { label: '접수종료', cls: 'closed' },
+};
+
+export function DriveInfo({ lib }) {
+  if (!lib) return null;
+  return (
+    <span className="meta-line">
+      {lib.driveMin != null ? (
+        <span title={lib.driveRange ? `참고 범위 ${lib.driveRange[0]}~${lib.driveRange[1]}분 (미검증)` : ''}>
+          🚗 약 {lib.driveMin}분
+        </span>
+      ) : (
+        <span className="muted">🚗 확인 전</span>
+      )}
+      {lib.station && (
+        <span>🚇 {lib.station.name}{lib.station.walkMin ? ` 도보 ${lib.station.walkMin}분` : ''}</span>
+      )}
+    </span>
+  );
+}
+
+export default function CourseCard({ course, lib, match, gradeAtClass, currentGrade }) {
+  const st = STATUS[course.status] ?? STATUS.closed;
+  const dday =
+    course.status === 'upcoming' && course.applyStart ? daysUntil(course.applyStart) : null;
+  const showClassGrade = gradeAtClass !== currentGrade && gradeAtClass >= 1 && gradeAtClass <= 6;
+
+  return (
+    <article className={`card ${st.cls}`}>
+      <div className="card-top">
+        <span className={`badge ${st.cls}`}>{st.label}</span>
+        {dday != null && dday >= 0 && (
+          <span className="dday">{dday === 0 ? '오늘 접수 시작' : `${dday}일 뒤 접수 시작`}</span>
+        )}
+        <span className="grow" />
+        {course.capacity != null && (
+          <span className="count">
+            {course.applied != null ? `${course.applied}/${course.capacity}명` : `정원 ${course.capacity}명`}
+            {course.waitCapacity ? ` (대기 ${course.waitApplied ?? 0}/${course.waitCapacity})` : ''}
+          </span>
+        )}
+      </div>
+
+      <h3 className="card-title">{course.title}</h3>
+
+      <div className="card-lib">
+        <strong>{lib?.name ?? course.libraryId}</strong>
+        <DriveInfo lib={lib} />
+      </div>
+
+      <dl className="rows">
+        <div>
+          <dt>대상</dt>
+          <dd>
+            {course.targetText || '원문 없음'}
+            {match.result === 'check' && <span className="pill warn">대상 확인 필요</span>}
+            {match.tags.map((t) => (
+              <span className="pill" key={t}>{t}</span>
+            ))}
+            {showClassGrade && <span className="pill">수업일 기준 {gradeLabel(gradeAtClass)}</span>}
+          </dd>
+        </div>
+        <div>
+          <dt>수업</dt>
+          <dd>{fmtClassSchedule(course)}</dd>
+        </div>
+        <div>
+          <dt>접수</dt>
+          <dd>
+            {course.applyStart ? fmtDateTime(course.applyStart) : '?'}
+            {' ~ '}
+            {course.applyEnd ? fmtDateTime(course.applyEnd) : '?'}
+          </dd>
+        </div>
+      </dl>
+
+      <a className="apply" href={course.url} target="_blank" rel="noopener noreferrer">
+        도서관 사이트에서 보기·신청
+      </a>
+    </article>
+  );
+}
