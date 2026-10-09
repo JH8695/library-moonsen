@@ -39,8 +39,24 @@ const RANGE_SEP = '[~\\-～–]';
  * 반환: { result: 'match' | 'nomatch' | 'check', tags: string[] }
  *  - match  : 대상에 해당
  *  - nomatch: 명확히 해당하지 않음
- *  - check  : 판단 불가 (만 N세, 원문 없음 등) → "대상 확인 필요"
+ *  - check  : 판단 불가 (만 N세, 보호자 동반인데 자녀 나이 불명, 원문 없음 등) → "대상 확인 필요"
+ *
+ * 판정 순서: ① 출생연도·학년·나이 같은 "명시된 조건" → ② 없을 때만 "어린이/가족/누구나" 같은 일반 단어
+ *           → ③ 성인·시니어 등 다른 연령대 단어 → ④ 보호자 전용 여부
+ * grade 는 초등 학년(1~6), age 는 세는나이, birthYear 는 출생연도(모르면 null).
  */
+const LV = '초등학교|초등|초|중학교|중등|중|고등학교|고등|고';
+const LEVEL_OFFSET = [0, 6, 9]; // 초1~6 → 1~6, 중1~3 → 7~9, 고1~3 → 10~12
+const LEVEL_MAX = [6, 3, 3];
+const levelOf = (p) => (p ? (p[0] === '초' ? 0 : p[0] === '중' ? 1 : 2) : null);
+
+const ADULT_WORDS = /시니어|노인|어르신|중년|장년|청년|성인|직장인|일반인|대학생|교사|선생님|예비부모|임산부|신혼|조부모|할머니|할아버지/;
+const OTHER_AGE_WORDS = /영유아|유아|미취학|중학생|중등|고등학생|청소년|10대/;
+const KID_WORDS = /초등(?:학생|생)?|초등학교|어린이|아동|전연령|모든연령|누구나|온가족|가족/;
+const PARENT_WORDS = /아빠|엄마|아버지|어머니|부모|양육자|학부모|보호자|맘|대디|자녀를둔|자녀가있는|자녀를키우는|자녀를양육/;
+// 보호자와 아이가 함께 참여하는 프로그램이라는 단서
+const PAIR_WORDS = /동반|함께|와같이|과같이|자녀와|아이와|아동과|부모와|엄마와|아빠와|가족/;
+
 export function matchTarget(text, grade, age, birthYear = null) {
   const tags = [];
   if (!text || !text.trim()) return { result: 'check', tags };
@@ -49,8 +65,6 @@ export function matchTarget(text, grade, age, birthYear = null) {
   let pos = false;
   let neg = false;
   let check = false;
-
-  const inGrade = (a, b) => grade >= Math.min(a, b) && grade <= Math.max(a, b);
 
   // 0) 출생연도: 2018~19년생, 2017년생~2014년생, 2017년생
   t = t.replace(new RegExp(`(\\d{4})(?:년생)?(?:${RANGE_SEP}(\\d{2,4}))?년생`, 'g'), (m, a, b) => {
@@ -61,24 +75,26 @@ export function matchTarget(text, grade, age, birthYear = null) {
     return '';
   });
 
-  // 1) 학년 범위: 초3~6, 초등3~6학년, 초3~초6, 3~6학년
+  // 1) 학년 (학교급 구분): 초3, 초등3~6학년, 3~6학년, 중1~3, 초등5학년~고등3학년
+  //    학교급 표시가 없으면 초등으로 간주. 오른쪽에 학교급이 없으면 왼쪽 학교급을 따름.
   t = t.replace(
-    new RegExp(`(?:초등학교|초등|초)?(\\d)(?:학년)?${RANGE_SEP}(?:초등학교|초등|초)?(\\d)학년?`, 'g'),
-    (m, a, b) => {
-      if (!/학년|초/.test(m)) return m; // "5~7세" 같은 나이 표기는 건드리지 않음
-      inGrade(+a, +b) ? (pos = true) : (neg = true);
+    new RegExp(`(${LV})?(\\d{1,2})(?:학년)?(?:${RANGE_SEP}(${LV})?(\\d{1,2})(?:학년)?)?`, 'g'),
+    (m, p1, a, p2, b) => {
+      if (!p1 && !p2 && !/학년/.test(m)) return m; // 학교급도 "학년"도 없으면 학년 표기가 아님 (예: 5~7세, 12명)
+      const l1 = levelOf(p1) ?? 0;
+      const l2 = p2 ? levelOf(p2) : l1;
+      const A = +a;
+      const B = b ? +b : null;
+      if (A < 1 || A > LEVEL_MAX[l1]) return m;
+      if (B != null && (B < 1 || B > LEVEL_MAX[l2])) return m;
+      const lo = LEVEL_OFFSET[l1] + A;
+      const hi = B != null ? LEVEL_OFFSET[l2] + B : lo;
+      grade >= Math.min(lo, hi) && grade <= Math.max(lo, hi) ? (pos = true) : (neg = true);
       return '';
     },
   );
 
-  // 2) 단일 학년: 초3, 초등3학년, 3학년
-  t = t.replace(/(?:초등학교|초등|초)(\d)(?:학년)?|(\d)학년/g, (m, a, b) => {
-    const n = +(a || b);
-    n === grade ? (pos = true) : (neg = true);
-    return '';
-  });
-
-  // 3) 나이: 9~13세 / 만9~13세 / 만9세이상
+  // 2) 나이: 9~13세 / 만9~13세 / 만9세이상
   //    "N세"는 세는나이로 비교. "만 N세"는 생일에 따라 (세는나이-2) 또는 (세는나이-1) 이므로
   //    두 값이 모두 범위 안이면 해당, 모두 밖이면 비해당, 걸치면 "확인 필요".
   t = t.replace(
@@ -100,13 +116,32 @@ export function matchTarget(text, grade, age, birthYear = null) {
     },
   );
 
-  // 4) 키워드
+  // 3) 학년군 단어 (명시 조건으로 취급)
   if (/저학년/.test(t)) (grade <= 3 ? (pos = true) : (neg = true));
+  if (/중학년/.test(t)) (grade >= 3 && grade <= 4 ? (pos = true) : (neg = true));
   if (/고학년/.test(t)) (grade >= 4 ? (pos = true) : (neg = true));
-  if (/초등(학생|생)?|초등학교/.test(t) && !/저학년|고학년/.test(t)) pos = true;
-  if (/어린이|전연령|모든연령|누구나|가족|온가족/.test(t)) { pos = true; tags.push('가족·누구나'); }
-  if (/유아|영유아|미취학|중학생|중등|청소년|고등|성인|일반인/.test(t)) neg = true;
-  if (/보호자|학부모|부모님?만/.test(t)) tags.push('보호자 대상 포함');
+
+  const explicit = pos || neg || check;
+
+  // 4) 일반 단어는 명시 조건이 없을 때만 "해당"으로 인정
+  //    (예: "초등 5학년~고등 3학년, 초등학생 1~2학년" 에서 '초등학생' 단어만 보고 해당 처리하면 안 됨)
+  if (KID_WORDS.test(t)) {
+    if (!explicit) pos = true;
+    if (/어린이|아동|전연령|모든연령|누구나|가족/.test(t)) tags.push('가족·누구나');
+  }
+
+  // 5) 다른 연령대 단어
+  if (ADULT_WORDS.test(t) || OTHER_AGE_WORDS.test(t)) neg = true;
+
+  // 6) 보호자 전용 여부: 보호자 단어가 있는데 "함께/동반/가족" 같은 단서가 없으면
+  //    학년 조건이 있어도 그건 "자녀의 학년"이므로 참석자는 보호자 → 제외
+  if (PARENT_WORDS.test(t)) {
+    if (!PAIR_WORDS.test(t)) {
+      tags.push('보호자·성인 대상');
+      return { result: 'nomatch', tags };
+    }
+    tags.push('보호자 동반');
+  }
 
   if (pos) return { result: 'match', tags };
   if (check) return { result: 'check', tags };
