@@ -104,6 +104,12 @@ export default function App() {
     return [...rows].sort((a, b) => key(a) - key(b) || t(a.course.classStart) - t(b.course.classStart));
   }, [base, region, selectedLib, sort]);
 
+  const collectedByLib = useMemo(() => {
+    const m = {};
+    courses.forEach((c) => { const k = c.libraryId ?? '__none'; m[k] = (m[k] ?? 0) + 1; });
+    return m;
+  }, [courses]);
+
   const selected = selectedLib ? LIBRARY_BY_ID[selectedLib] : null;
   const showMap = isDesktop || view === 'map';
   const hasErrors = meta.errors?.length > 0;
@@ -127,12 +133,15 @@ export default function App() {
         </div>
       )}
       {!meta.isSample && meta.fetchedAt && (
-        <div className="banner ok">마지막 업데이트 {fmtFetchedAt(meta.fetchedAt)}</div>
+        <div className="banner ok">
+          마지막 업데이트 {fmtFetchedAt(meta.fetchedAt)} · 수집된 강좌 {courses.length}건
+        </div>
       )}
       {hasErrors && (
         <div className="banner err">
-          일부 도서관 정보를 가져오지 못했어요: {meta.errors.map((e) => e.source).join(', ')}.
-          해당 도서관 강좌는 오래된 정보일 수 있어요.
+          일부 도서관 정보를 가져오지 못했어요:{' '}
+          {meta.errors.map((e) => `${e.source}${e.message ? ` (${e.message})` : ''}`).join(', ')}.
+          해당 도서관 강좌는 표시되지 않아요.
         </div>
       )}
 
@@ -183,7 +192,10 @@ export default function App() {
           {list.length === 0 ? (
             <div className="empty">
               <h3>조건에 맞는 강좌가 없어요</h3>
-              <p>상태 탭이나 지역을 바꾸거나, 아래 옵션으로 범위를 넓혀 보세요.</p>
+              <p>
+                수집된 강좌 {courses.length}건 중 지금 조건에 맞는 게 없어요.
+                {!showAllTargets && ' 아래 "대상 안 맞는 강좌 포함"을 켜면 전체를 볼 수 있어요.'}
+              </p>
             </div>
           ) : (
             list.map(({ course, match, gradeAtClass }) => (
@@ -197,6 +209,14 @@ export default function App() {
               />
             ))
           )}
+          <details className="foot">
+            <summary>도서관별 수집 현황 (총 {courses.length}건)</summary>
+            <p>
+              {LIBRARIES.map((l) => `${l.name} ${collectedByLib[l.id] ?? 0}`).join(' · ')}
+              {collectedByLib.__none ? ` · 도서관 미분류 ${collectedByLib.__none}` : ''}
+            </p>
+            <p>접수예정·접수중·대기·접수마감(수업 전) 강좌를 모두 센 값이에요. 0인 도서관은 지금 해당 강좌가 없거나 수집이 안 된 거예요.</p>
+          </details>
           <p className="foot">
             주소·차량 시간은 참고용(미검증) 값이에요. 신청은 각 도서관 사이트에서 직접 하고,
             이 앱은 로그인 정보를 받지 않아요.
