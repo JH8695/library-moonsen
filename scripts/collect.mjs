@@ -1,13 +1,13 @@
 // 사용법: node scripts/collect.mjs   → public/data/courses.json 생성
 // 개인용으로 1시간에 한 번, 소수의 페이지만, 요청 사이에 간격을 두고 읽습니다.
 import fs from 'node:fs/promises';
-import { LIST_URL, parseGangnamList } from './gangnam.mjs';
+import { collectGangnamWith } from './gangnam.mjs';
 import { API_URL as YJ_API, parseYangjae } from './yangjae.mjs';
 
 const UA = 'library-courses-personal/0.1 (personal, hourly)';
-const DELAY_MS = 1500;
-const MAX_PAGES = 4;          // 상태별 최대 페이지
-const STATUSES = [['ready', 'upcoming'], ['apply', 'open'], ['wait', 'waitlist'], ['finish', 'closed']];
+const DELAY_MS = 1200;
+// [상태코드, 기대 상태, 전체조회로 부족할 때 도서관별 재조회 허용]
+const PLAN = [['ready', 'upcoming', true], ['apply', 'open', true], ['wait', 'waitlist', true], ['finish', 'closed', false]];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const describe = (e) =>
@@ -31,47 +31,7 @@ async function getHtml(url) {
 }
 
 async function collectGangnam() {
-  const byId = new Map();
-  const warnings = [];
-  let okStatuses = 0;
-  const failures = [];
-  for (const [code, expected] of STATUSES) {
-    let firstIdPrev = null;
-    try {
-      for (let page = 1; page <= MAX_PAGES; page++) {
-        const url = `${LIST_URL}?manageCd=ALL&searchStatusCd=${code}&searchCondition=title&searchKeyword=&searchCategory=&currentPageNo=${page}`;
-        let html;
-        try {
-          html = await getHtml(url);
-        } catch (e) {
-          if (page === 1) throw e;           // 첫 페이지 실패 = 이 상태는 실패
-          warnings.push(`${code} ${page}페이지 실패: ${describe(e)} (앞 페이지까지만 사용)`);
-          break;
-        }
-        const { courses, warnings: w, lastPage } = parseGangnamList(html);
-        warnings.push(...w);
-        if (courses.length === 0) break;
-        if (page > 1 && courses[0].id === firstIdPrev) {
-          warnings.push(`페이지 파라미터(currentPageNo)가 먹히지 않는 것 같아요 (${code}) — 확인 필요`);
-          break;
-        }
-        firstIdPrev = courses[0].id;
-        for (const c of courses) {
-          if (c.status !== expected) warnings.push(`상태 필터 불일치: ${c.id} ${c.status} (요청 ${expected})`);
-          byId.set(c.id, c);
-        }
-        if (lastPage && page >= lastPage) break;
-        await sleep(DELAY_MS);
-      }
-      okStatuses++;
-    } catch (e) {
-      failures.push(`${code}: ${describe(e)}`);
-    }
-    await sleep(DELAY_MS);
-  }
-  if (okStatuses === 0) throw new Error(failures.join(' / '));
-  if (failures.length) warnings.push(`일부 상태 수집 실패 → ${failures.join(' / ')}`);
-  return { courses: [...byId.values()], warnings };
+  return collectGangnamWith({ getHtml, sleep, delayMs: DELAY_MS, plan: PLAN });
 }
 
 // 양재: JSON API. 최신순이라 앞쪽 페이지만 읽고, 수업이 이미 끝난 강좌뿐인 페이지가 나오면 멈춤.
@@ -111,7 +71,10 @@ try {
   const g = await collectGangnam();
   courses.push(...g.courses);
   meta.warnings.push(...g.warnings);
-  console.log(`강남구: ${g.courses.length}건, 경고 ${g.warnings.length}건`);
+  console.log(`강남구: ${g.courses.length}건, 경고 ${g.warnings.length}건`, JSON.stringify(g.stats));
+  const perLib = {};
+  g.courses.forEach((c) => { perLib[c.libraryId ?? '미분류'] = (perLib[c.libraryId ?? '미분류'] ?? 0) + 1; });
+  console.log('도서관별 수집 건수:', JSON.stringify(perLib));
 } catch (e) {
   // 실패한 출처의 옛 데이터는 남기지 않음 (현재 정보처럼 보이면 안 되므로)
   meta.errors.push({ source: '강남구립도서관', message: describe(e) });

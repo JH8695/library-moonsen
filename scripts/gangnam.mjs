@@ -13,6 +13,24 @@ const LIB_BY_CLASS = {
   jdwlib: 'jeongdaun', jgwlib: 'jeulgeoun', cdlib: 'cheongdam', happylib: 'haengbokan',
 };
 
+// 검색 폼의 도서관 코드(manageCd) → libraries.js id
+export const LIB_CODES = {
+  MA: 'dogok', MM: 'gaepo', MB: 'nonhyeon', MN: 'nonhyeon-maru', SA: 'nonhyeon-maru-annex',
+  SB: 'daechi1', MC: 'daechi', MD: 'motgol', ME: 'motgol-hanok', SC: 'samsung', SD: 'segok',
+  SF: 'segok-maru', SE: 'yeoksam2', MF: 'yeoksam', MG: 'yeoksam-pureunsol', MH: 'yeollin',
+  SH: 'ilwon-raon', MI: 'jeongdaun', MJ: 'jeulgeoun', MK: 'cheongdam', ML: 'haengbokan',
+};
+
+// 목록에 표시되는 줄임 이름(공백·줄바꿈 제거) → id. CSS 클래스로 못 찾을 때의 보조 수단.
+const LIB_BY_NAME = {
+  도곡정보: 'dogok', 도곡: 'dogok', 개포하늘꿈: 'gaepo', 개포: 'gaepo',
+  논현문화마루: 'nonhyeon-maru', 논현: 'nonhyeon', 대치1작은: 'daechi1', 대치1: 'daechi1', 대치: 'daechi',
+  못골한옥: 'motgol-hanok', 못골: 'motgol', 삼성: 'samsung', 세곡마루: 'segok-maru', 세곡: 'segok',
+  역삼2동: 'yeoksam2', 역삼2: 'yeoksam2', 역삼푸른솔: 'yeoksam-pureunsol', 역삼: 'yeoksam',
+  열린: 'yeollin', 일원라온영어: 'ilwon-raon', 일원: 'ilwon-raon', 정다운: 'jeongdaun',
+  즐거운: 'jeulgeoun', 청담: 'cheongdam', 행복한: 'haengbokan',
+};
+
 const STATUS_BY_CLASS = {
   ready: 'upcoming', apply: 'open', wait: 'waitlist', finish: 'closed', end: 'closed',
 };
@@ -34,7 +52,7 @@ function checkWeekday(d, warnings, title) {
   if (real !== d.dow) warnings.push(`요일 불일치: ${title} ${d.date} 원문 ${d.dow} / 계산 ${real}`);
 }
 
-export function parseGangnamList(html) {
+export function parseGangnamList(html, { libraryId: forcedLibraryId = null } = {}) {
   const $ = cheerio.load(html);
   const courses = [];
   const warnings = [];
@@ -48,7 +66,7 @@ export function parseGangnamList(html) {
 
     const libClass = ($li.find('i.lib').attr('class') || '').split(/\s+/).find((c) => c !== 'lib');
     const libName = $li.find('i.lib').text().replace(/\s+/g, '');
-    const libraryId = LIB_BY_CLASS[libClass] ?? null;
+    const libraryId = forcedLibraryId ?? LIB_BY_CLASS[libClass] ?? LIB_BY_NAME[libName] ?? null;
     if (!libraryId) warnings.push(`알 수 없는 도서관 클래스: ${libClass} (${libName}) — ${title}`);
 
     const spans = $li.find('ul.info > li').first().find('span');
@@ -108,4 +126,82 @@ export function parseGangnamList(html) {
 
   const lastPage = Number(html.match(/fnList\((\d+)\);"\s+class="btn-paging last"/)?.[1]) || null;
   return { courses, warnings, lastPage };
+}
+
+// ---------------------------------------------------------------------------
+// 수집: 상태(접수예정/접수중/대기/접수마감)별로 "전체 도서관" 목록을 페이지 넘기며 읽고,
+// 페이지 넘김이 안 먹히거나 끝까지 못 읽었으면 도서관별로 다시 읽는다 (도서관마다 건수가 적어 첫 페이지로 충분).
+// getHtml / sleep 은 밖에서 주입 → 네트워크 없이 테스트 가능.
+export const PAGE_SIZE = 10;
+
+async function queryPages({ getHtml, sleep, delayMs, status, expected, manageCd, libraryId, maxPages }) {
+  const items = [];
+  const warnings = [];
+  let prevFirst = null;
+  let complete = false;
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `${LIST_URL}?manageCd=${manageCd}&searchStatusCd=${status}&searchCondition=title&searchKeyword=&searchCategory=&currentPageNo=${page}`;
+    let html;
+    try {
+      html = await getHtml(url);
+    } catch (e) {
+      if (page === 1) throw e;
+      warnings.push(`${manageCd}/${status} ${page}페이지 실패: ${e.message} (앞 페이지까지만 사용)`);
+      break;
+    }
+    const parsed = parseGangnamList(html, { libraryId });
+    warnings.push(...parsed.warnings);
+    if (parsed.courses.length === 0) { complete = true; break; }
+    if (page > 1 && parsed.courses[0].id === prevFirst) {
+      warnings.push(`페이지 넘김이 안 먹혀요 (${manageCd}/${status})`);
+      break; // complete=false
+    }
+    prevFirst = parsed.courses[0].id;
+    for (const c of parsed.courses) {
+      if (c.status !== expected) warnings.push(`상태 필터 불일치: ${c.id} ${c.status} (요청 ${expected})`);
+      items.push(c);
+    }
+    if (parsed.courses.length < PAGE_SIZE || (parsed.lastPage && page >= parsed.lastPage)) { complete = true; break; }
+    await sleep(delayMs);
+  }
+  return { items, warnings, complete };
+}
+
+// plan: [[상태코드, 기대 상태, 도서관별 재조회 허용 여부], ...]
+export async function collectGangnamWith({ getHtml, sleep, delayMs = 1200, plan }) {
+  const byId = new Map();
+  const warnings = [];
+  const failures = [];
+  const stats = {};
+  let ok = 0;
+  for (const [status, expected, allowFallback] of plan) {
+    try {
+      const r = await queryPages({ getHtml, sleep, delayMs, status, expected, manageCd: 'ALL', maxPages: 8 });
+      warnings.push(...r.warnings);
+      r.items.forEach((c) => byId.set(c.id, c));
+      stats[status] = { all: r.items.length, complete: r.complete, perLibrary: false };
+      ok++;
+      if (!r.complete && allowFallback) {
+        warnings.push(`${status}: 전체 조회로 다 못 읽어서 도서관별로 다시 읽어요`);
+        stats[status].perLibrary = true;
+        for (const [code, libraryId] of Object.entries(LIB_CODES)) {
+          await sleep(delayMs);
+          try {
+            const r2 = await queryPages({ getHtml, sleep, delayMs, status, expected, manageCd: code, libraryId, maxPages: 3 });
+            warnings.push(...r2.warnings.filter((w) => !w.startsWith('상태 필터')));
+            r2.items.forEach((c) => byId.set(c.id, c)); // 도서관 코드로 읽은 결과가 더 정확하므로 덮어씀
+            if (!r2.complete) warnings.push(`${code}/${status}: 일부만 수집 (3페이지 초과 또는 넘김 불가)`);
+          } catch (e) {
+            warnings.push(`${code}/${status} 실패: ${e.message}`);
+          }
+        }
+      }
+    } catch (e) {
+      failures.push(`${status}: ${e.message}`);
+    }
+    await sleep(delayMs);
+  }
+  if (ok === 0) throw new Error(failures.join(' / '));
+  if (failures.length) warnings.push(`일부 상태 수집 실패 → ${failures.join(' / ')}`);
+  return { courses: [...byId.values()], warnings, stats };
 }
