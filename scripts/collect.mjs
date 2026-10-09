@@ -22,7 +22,7 @@ async function collectGangnam() {
   for (const [code, expected] of STATUSES) {
     let firstIdPrev = null;
     for (let page = 1; page <= MAX_PAGES; page++) {
-      const url = `${LIST_URL}?manageCd=ALL&searchStatusCd=${code}&searchCondition=title&searchKeyword=&searchCategory=&pageIndex=${page}`;
+      const url = `${LIST_URL}?manageCd=ALL&searchStatusCd=${code}&searchCondition=title&searchKeyword=&searchCategory=&currentPageNo=${page}`;
       const html = await getHtml(url);
       const { courses, warnings: w, lastPage } = parseGangnamList(html);
       warnings.push(...w);
