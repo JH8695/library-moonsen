@@ -75,6 +75,8 @@ export function parseYangjae(json) {
     warnings,
     totalPage: json.data.totalPage ?? null,
     rawTakeEnds: json.data.data.map((r) => (r.leTakeEDate ?? 0) * 1000),
+    // 수업 종료일(그날 00:00 에포크) — 하루를 더해 "그날 끝"으로 비교
+    rawClassEnds: json.data.data.map((r) => (r.leOpenEDate ?? 0) * 1000 + 86400000),
     categories: json.data.data.map((r) => r.leLPart),
   };
 }
