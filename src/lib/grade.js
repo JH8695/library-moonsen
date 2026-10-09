@@ -78,7 +78,10 @@ export function matchTarget(text, grade, age, birthYear = null) {
   // 1) 학년 (학교급 구분): 초3, 초등3~6학년, 3~6학년, 중1~3, 초등5학년~고등3학년
   //    학교급 표시가 없으면 초등으로 간주. 오른쪽에 학교급이 없으면 왼쪽 학교급을 따름.
   t = t.replace(
-    new RegExp(`(${LV})?(\\d{1,2})(?:학년)?(?:${RANGE_SEP}(${LV})?(\\d{1,2})(?:학년)?)?`, 'g'),
+    new RegExp(
+      `(?:(?<![가-힣])(${LV}))?(\\d{1,2})(?:학년)?(?:${RANGE_SEP}(?:(?<![가-힣])(${LV}))?(\\d{1,2})(?:학년)?)?`,
+      'g',
+    ),
     (m, p1, a, p2, b) => {
       if (!p1 && !p2 && !/학년/.test(m)) return m; // 학교급도 "학년"도 없으면 학년 표기가 아님 (예: 5~7세, 12명)
       const l1 = levelOf(p1) ?? 0;
@@ -132,6 +135,12 @@ export function matchTarget(text, grade, age, birthYear = null) {
 
   // 5) 다른 연령대 단어
   if (ADULT_WORDS.test(t) || OTHER_AGE_WORDS.test(t)) neg = true;
+
+  // 팀·가족 단위 신청("4팀 (대표자 1명만 신청)")은 나이가 적혀 있지 않으면 확인 대상으로 둠
+  if (/\d+팀/.test(t) && !(pos || neg || check)) {
+    check = true;
+    tags.push('팀 신청 · 나이 직접 확인');
+  }
 
   // 6) 보호자 전용 여부: 보호자 단어가 있는데 "함께/동반/가족" 같은 단서가 없으면
   //    학년 조건이 있어도 그건 "자녀의 학년"이므로 참석자는 보호자 → 제외
