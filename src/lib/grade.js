@@ -52,7 +52,10 @@ const levelOf = (p) => (p ? (p[0] === '초' ? 0 : p[0] === '중' ? 1 : 2) : null
 
 const ADULT_WORDS = /시니어|노인|어르신|중년|장년|청년|성인|직장인|일반인|대학생|교사|선생님|예비부모|임산부|신혼|조부모|할머니|할아버지/;
 const OTHER_AGE_WORDS = /영유아|유아|미취학|중학생|중등|고등학생|청소년|10대/;
-const KID_WORDS = /초등(?:학생|생)?|초등학교|어린이|아동|전연령|모든연령|누구나|온가족|가족/;
+// 아이가 분명히 대상에 들어가는 말
+const KID_WORDS = /초등(?:학생|생)?|초등학교|어린이|아동|온가족|가족/;
+// "누구나"는 단독이면 아이도 포함이지만, "성인 누구나"처럼 다른 연령대 단어와 같이 쓰이면 그 연령대만 뜻함
+const ALL_AGES_WORDS = /전연령|모든연령|누구나/;
 const PARENT_WORDS = /아빠|엄마|아버지|어머니|부모|양육자|학부모|보호자|맘|대디|자녀를둔|자녀가있는|자녀를키우는|자녀를양육/;
 // 보호자와 아이가 함께 참여하는 프로그램이라는 단서
 const PAIR_WORDS = /동반|함께|와같이|과같이|자녀와|아이와|아동과|부모와|엄마와|아빠와|가족/;
@@ -126,15 +129,22 @@ export function matchTarget(text, grade, age, birthYear = null) {
 
   const explicit = pos || neg || check;
 
-  // 4) 일반 단어는 명시 조건이 없을 때만 "해당"으로 인정
-  //    (예: "초등 5학년~고등 3학년, 초등학생 1~2학년" 에서 '초등학생' 단어만 보고 해당 처리하면 안 됨)
-  if (KID_WORDS.test(t)) {
-    if (!explicit) pos = true;
-    if (/어린이|아동|전연령|모든연령|누구나|가족/.test(t)) tags.push('가족·누구나');
-  }
+  // 4) 다른 연령대 단어 (성인·시니어·중학생 등)
+  const otherAge = ADULT_WORDS.test(t) || OTHER_AGE_WORDS.test(t);
+  if (otherAge) neg = true;
 
-  // 5) 다른 연령대 단어
-  if (ADULT_WORDS.test(t) || OTHER_AGE_WORDS.test(t)) neg = true;
+  // 5) 일반 단어는 명시 조건(학년·나이·출생연도)이 없을 때만 "해당"으로 인정
+  //    - 어린이/초등/가족 등: 아이가 포함되므로 해당
+  //    - 누구나/전연령: 다른 연령대 단어가 같이 있으면(예: "성인 누구나") 해당으로 보지 않음
+  if (!explicit) {
+    if (KID_WORDS.test(t)) {
+      pos = true;
+      if (/어린이|아동|가족/.test(t)) tags.push('가족·누구나');
+    } else if (ALL_AGES_WORDS.test(t) && !otherAge) {
+      pos = true;
+      tags.push('가족·누구나');
+    }
+  }
 
   // 팀·가족 단위 신청("4팀 (대표자 1명만 신청)")은 나이가 적혀 있지 않으면 확인 대상으로 둠
   if (/\d+팀/.test(t) && !(pos || neg || check)) {
