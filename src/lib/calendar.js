@@ -38,10 +38,10 @@ export function occurrenceDates(course, daySet) {
   return { dates: dates.length ? dates : [s], estimated };
 }
 
-// 월요일 시작 달력 칸. 빈 칸은 null, 날짜는 'YYYY-MM-DD'. m 은 1~12.
+// 일요일 시작 달력 칸. 빈 칸은 null, 날짜는 'YYYY-MM-DD'. m 은 1~12.
 export function monthGrid(y, m) {
   const first = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(); // 0=일
-  const offset = (first + 6) % 7;
+  const offset = first; // 일요일이 첫 칸
   const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const cells = Array(offset).fill(null);
   for (let d = 1; d <= days; d++) cells.push(`${y}-${pad(m)}-${pad(d)}`);

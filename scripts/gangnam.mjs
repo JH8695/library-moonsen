@@ -173,6 +173,7 @@ export async function collectGangnamWith({ getHtml, sleep, delayMs = 1200, plan 
   const warnings = [];
   const failures = [];
   const stats = {};
+  const failedParts = [];
   let ok = 0;
   for (const [status, expected, allowFallback] of plan) {
     try {
@@ -193,15 +194,17 @@ export async function collectGangnamWith({ getHtml, sleep, delayMs = 1200, plan 
             if (!r2.complete) warnings.push(`${code}/${status}: 일부만 수집 (3페이지 초과 또는 넘김 불가)`);
           } catch (e) {
             warnings.push(`${code}/${status} 실패: ${e.message}`);
+            failedParts.push(`${code}/${status}`);
           }
         }
       }
     } catch (e) {
       failures.push(`${status}: ${e.message}`);
+      failedParts.push(`${status}(전체)`);
     }
     await sleep(delayMs);
   }
   if (ok === 0) throw new Error(failures.join(' / '));
   if (failures.length) warnings.push(`일부 상태 수집 실패 → ${failures.join(' / ')}`);
-  return { courses: [...byId.values()], warnings, stats };
+  return { courses: [...byId.values()], warnings, stats, failedParts };
 }

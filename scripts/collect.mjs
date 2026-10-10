@@ -14,7 +14,7 @@ const describe = (e) =>
   `${e.message || e}${e.cause ? ` (${e.cause.code || e.cause.message})` : ''}`;
 
 async function getHtml(url) {
-  for (let attempt = 1; attempt <= 2; attempt++) {
+  for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const res = await fetch(url, {
         headers: { 'User-Agent': UA, 'Accept-Language': 'ko' },
@@ -23,9 +23,9 @@ async function getHtml(url) {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.text();
     } catch (e) {
-      console.warn(`요청 실패(${attempt}/2): ${url} → ${describe(e)}`);
-      if (attempt === 2) throw e;
-      await sleep(3000);
+      console.warn(`요청 실패(${attempt}/3): ${url} → ${describe(e)}`);
+      if (attempt === 3) throw e;
+      await sleep(attempt * 4000);
     }
   }
 }
@@ -71,6 +71,12 @@ try {
   const g = await collectGangnam();
   courses.push(...g.courses);
   meta.warnings.push(...g.warnings);
+  if (g.failedParts?.length) {
+    // 일부만 실패해도 화면 배너로 알림 (목록에서 강좌가 빠졌을 수 있음)
+    const shown = g.failedParts.slice(0, 4).join(', ');
+    const more = g.failedParts.length > 4 ? ` 외 ${g.failedParts.length - 4}건` : '';
+    meta.errors.push({ source: '강남구립도서관 일부', message: shown + more });
+  }
   console.log(`강남구: ${g.courses.length}건, 경고 ${g.warnings.length}건`, JSON.stringify(g.stats));
   const perLib = {};
   g.courses.forEach((c) => { perLib[c.libraryId ?? '미분류'] = (perLib[c.libraryId ?? '미분류'] ?? 0) + 1; });

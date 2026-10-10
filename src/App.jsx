@@ -141,6 +141,12 @@ export default function App() {
   );
   const leftMode = view === 'calendar' ? 'calendar' : 'list'; // 지도(view='map')는 모바일 전용 탭
 
+  const statusCounts = useMemo(() => {
+    const m = {};
+    courses.forEach((c) => { m[c.status] = (m[c.status] ?? 0) + 1; });
+    return m;
+  }, [courses]);
+
   const selected = selectedLib ? byId[selectedLib] : null;
   const showMap = isDesktop || view === 'map';
   const hasErrors = meta.errors?.length > 0;
@@ -170,9 +176,9 @@ export default function App() {
       )}
       {hasErrors && (
         <div className="banner err">
-          일부 도서관 정보를 가져오지 못했어요:{' '}
+          일부 정보를 가져오지 못했어요:{' '}
           {meta.errors.map((e) => `${e.source}${e.message ? ` (${e.message})` : ''}`).join(', ')}.
-          해당 도서관 강좌는 표시되지 않아요.
+          목록에 빠진 강좌가 있을 수 있어요. 잠시 뒤 다시 확인해 주세요.
         </div>
       )}
 
@@ -199,6 +205,12 @@ export default function App() {
               </button>
             ))}
           </div>
+          {isDesktop && (
+            <div className="seg view-seg" role="group" aria-label="보기 방식">
+              <button className={leftMode === 'list' ? 'on' : ''} onClick={() => setView('list')}>목록</button>
+              <button className={leftMode === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>달력 (행사일)</button>
+            </div>
+          )}
           <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="정렬">
             {SORTS.map((s) => (
               <option key={s.id} value={s.id}>{s.label}</option>
@@ -232,12 +244,6 @@ export default function App() {
 
       <main className={`panes ${showMap ? 'map-on' : ''}`}>
         <section className="pane-list" hidden={!isDesktop && view === 'map'}>
-          {isDesktop && (
-            <div className="seg view-seg" role="group" aria-label="보기 방식">
-              <button className={leftMode === 'list' ? 'on' : ''} onClick={() => setView('list')}>목록</button>
-              <button className={leftMode === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>달력 (행사일)</button>
-            </div>
-          )}
           {selected && (
             <button className="lib-chip" onClick={() => setSelectedLib(null)}>
               {selected.name} <span aria-hidden>✕</span>
@@ -263,6 +269,9 @@ export default function App() {
             <p>
               {libs.map((l) => `${l.name} ${collectedByLib[l.id] ?? 0}`).join(' · ')}
               {collectedByLib.__none ? ` · 도서관 미분류 ${collectedByLib.__none}` : ''}
+            </p>
+            <p>
+              상태별: 접수중 {statusCounts.open ?? 0} · 접수예정 {statusCounts.upcoming ?? 0} · 대기 {statusCounts.waitlist ?? 0} · 접수마감 {statusCounts.closed ?? 0}
             </p>
             <p>접수예정·접수중·대기·접수마감(수업 전) 강좌를 모두 센 값이에요. 0인 도서관은 지금 해당 강좌가 없거나 수집이 안 된 거예요.</p>
           </details>

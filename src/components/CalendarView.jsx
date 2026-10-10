@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { DAY_LABELS } from '../lib/weekdays';
 import { monthGrid, monthKey, occurrenceDates, toYmd, dowOfYmd } from '../lib/calendar';
 
-const HEAD = [1, 2, 3, 4, 5, 6, 0]; // 월~일
+const HEAD = [0, 1, 2, 3, 4, 5, 6]; // 일~토
 
 const timeKey = (c) => (c.classStart ? c.classStart.slice(11, 16) : '99:99');
 
@@ -94,7 +94,7 @@ export default function CalendarView({ rows, renderCard }) {
             <button
               key={ymd}
               type="button"
-              className={`cal-cell${ymd === today ? ' today' : ''}${ymd === sel ? ' sel' : ''}${col === 5 ? ' sat' : col === 6 ? ' sun' : ''}`}
+              className={`cal-cell${ymd === today ? ' today' : ''}${ymd === sel ? ' sel' : ''}${col === 6 ? ' sat' : col === 0 ? ' sun' : ''}`}
               onClick={() => setSel(ymd)}
               aria-label={`${+ymd.slice(5, 7)}월 ${+ymd.slice(8, 10)}일, 강좌 ${items.length}개`}
               aria-pressed={ymd === sel}
