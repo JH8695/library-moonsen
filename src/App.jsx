@@ -10,6 +10,7 @@ import CourseCard from './components/CourseCard';
 import MapView from './components/MapView';
 import Settings from './components/Settings';
 import LibraryEditor from './components/LibraryEditor';
+import CalendarView from './components/CalendarView';
 
 const TABS = [
   { id: 'all', label: '전체' },
@@ -127,6 +128,19 @@ export default function App() {
     return m;
   }, [courses]);
 
+  const renderCard = ({ course, match, gradeAtClass }) => (
+    <CourseCard
+      key={course.id}
+      course={course}
+      lib={byId[course.libraryId]}
+      match={match}
+      gradeAtClass={gradeAtClass}
+      currentGrade={currentGrade}
+      onEditLib={(id) => setEditor({ focusId: id })}
+    />
+  );
+  const leftMode = view === 'calendar' ? 'calendar' : 'list'; // 지도(view='map')는 모바일 전용 탭
+
   const selected = selectedLib ? byId[selectedLib] : null;
   const showMap = isDesktop || view === 'map';
   const hasErrors = meta.errors?.length > 0;
@@ -217,14 +231,22 @@ export default function App() {
       </nav>
 
       <main className={`panes ${showMap ? 'map-on' : ''}`}>
-        <section className="pane-list" hidden={!isDesktop && view !== 'list'}>
+        <section className="pane-list" hidden={!isDesktop && view === 'map'}>
+          {isDesktop && (
+            <div className="seg view-seg" role="group" aria-label="보기 방식">
+              <button className={leftMode === 'list' ? 'on' : ''} onClick={() => setView('list')}>목록</button>
+              <button className={leftMode === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>달력 (행사일)</button>
+            </div>
+          )}
           {selected && (
             <button className="lib-chip" onClick={() => setSelectedLib(null)}>
               {selected.name} <span aria-hidden>✕</span>
               <span className="sr-only">선택 해제</span>
             </button>
           )}
-          {list.length === 0 ? (
+          {leftMode === 'calendar' ? (
+            <CalendarView rows={list} renderCard={renderCard} />
+          ) : list.length === 0 ? (
             <div className="empty">
               <h3>조건에 맞는 강좌가 없어요</h3>
               <p>
@@ -234,17 +256,7 @@ export default function App() {
               </p>
             </div>
           ) : (
-            list.map(({ course, match, gradeAtClass }) => (
-              <CourseCard
-                key={course.id}
-                course={course}
-                lib={byId[course.libraryId]}
-                match={match}
-                gradeAtClass={gradeAtClass}
-                currentGrade={currentGrade}
-                onEditLib={(id) => setEditor({ focusId: id })}
-              />
-            ))
+            list.map(renderCard)
           )}
           <details className="foot">
             <summary>도서관별 수집 현황 (총 {courses.length}건)</summary>
@@ -270,6 +282,7 @@ export default function App() {
       {!isDesktop && (
         <div className="viewbar">
           <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>강좌 목록</button>
+          <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>달력</button>
           <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>지도 보기</button>
         </div>
       )}
