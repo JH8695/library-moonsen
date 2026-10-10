@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { REGIONS } from './data/libraries';
 import { gradeOn, koreanAge, gradeLabel, matchTarget, academicYear } from './lib/grade';
-import { fmtFetchedAt } from './lib/format';
+import { fmtFetchedAt, fmtStartTime } from './lib/format';
 import { useSettings } from './lib/useSettings';
 import { useCourses } from './lib/useCourses';
 import { useLibraries } from './lib/useLibraries';
@@ -47,13 +47,15 @@ export default function App() {
   const [tab, setTab] = useState('all');
   const [region, setRegion] = useState('all');
   const [sort, setSort] = useState('applyStart');
-  const [view, setView] = useState('list');
+  const [view, setView] = useState('calendar'); // 폰 하단 탭: calendar | list | map (PC는 사용 안 함)
   const [selectedLib, setSelectedLib] = useState(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showAllTargets, setShowAllTargets] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editor, setEditor] = useState(null); // null | { focusId: string | null }
   const days = settings.days ?? [];
+  const phoneCalendar = !isDesktop && view === 'calendar';
+  const effDays = useMemo(() => (phoneCalendar ? [] : days), [phoneCalendar, days]);
   const toggleDay = (d) =>
     setSettings({ ...settings, days: days.includes(d) ? days.filter((x) => x !== d) : [...days, d] });
 
@@ -82,13 +84,13 @@ export default function App() {
   const base = useMemo(() => {
     return enriched.filter(({ course, match, daySet }) => {
       if (!showAllTargets && match.result === 'nomatch') return false;
-      if (!passesDays(days, daySet)) return false;
+      if (!passesDays(effDays, daySet)) return false;
       const s = course.status;
       if (tab === 'open') return s === 'open';
       if (tab === 'upcoming') return s === 'upcoming';
       return s === 'open' || s === 'upcoming' || showClosed;
     });
-  }, [enriched, tab, showClosed, showAllTargets, days]);
+  }, [enriched, tab, showClosed, showAllTargets, effDays]);
 
   const counts = useMemo(() => {
     const m = {};
@@ -98,14 +100,14 @@ export default function App() {
 
   const tabCounts = useMemo(() => {
     const ok = enriched.filter(
-      (e) => (showAllTargets || e.match.result !== 'nomatch') && passesDays(days, e.daySet),
+      (e) => (showAllTargets || e.match.result !== 'nomatch') && passesDays(effDays, e.daySet),
     );
     return {
       all: ok.filter((e) => ['open', 'upcoming'].includes(e.course.status) || showClosed).length,
       open: ok.filter((e) => e.course.status === 'open').length,
       upcoming: ok.filter((e) => e.course.status === 'upcoming').length,
     };
-  }, [enriched, showClosed, showAllTargets, days]);
+  }, [enriched, showClosed, showAllTargets, effDays]);
 
   const list = useMemo(() => {
     const rows = base.filter(({ course }) => {
@@ -139,7 +141,6 @@ export default function App() {
       onEditLib={(id) => setEditor({ focusId: id })}
     />
   );
-  const leftMode = view === 'calendar' ? 'calendar' : 'list'; // 지도(view='map')는 모바일 전용 탭
 
   const statusCounts = useMemo(() => {
     const m = {};
@@ -147,8 +148,29 @@ export default function App() {
     return m;
   }, [courses]);
 
+  const STATUS_LABEL = { open: '접수가능', upcoming: '접수예정', waitlist: '대기', closed: '마감' };
+  const renderCompact = ({ course }) => {
+    const time = fmtStartTime(course);
+    return (
+      <a
+        key={course.id}
+        className={`cal-row ${course.status}`}
+        href={course.url}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        <span className={`badge ${course.status === 'open' ? 'open' : course.status === 'upcoming' ? 'upcoming' : 'closed'}`}>
+          {STATUS_LABEL[course.status] ?? ''}
+        </span>
+        <span className="cal-row-title">{course.title}</span>
+        <span className="cal-row-sub">
+          {time && `${time} · `}{byId[course.libraryId]?.name ?? ''}
+        </span>
+      </a>
+    );
+  };
+
   const selected = selectedLib ? byId[selectedLib] : null;
-  const showMap = isDesktop || view === 'map';
   const hasErrors = meta.errors?.length > 0;
 
   return (
@@ -205,12 +227,6 @@ export default function App() {
               </button>
             ))}
           </div>
-          {isDesktop && (
-            <div className="seg view-seg" role="group" aria-label="보기 방식">
-              <button className={leftMode === 'list' ? 'on' : ''} onClick={() => setView('list')}>목록</button>
-              <button className={leftMode === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>달력 (행사일)</button>
-            </div>
-          )}
           <select value={sort} onChange={(e) => setSort(e.target.value)} aria-label="정렬">
             {SORTS.map((s) => (
               <option key={s.id} value={s.id}>{s.label}</option>
@@ -218,6 +234,7 @@ export default function App() {
           </select>
         </div>
 
+        {!phoneCalendar && (
         <div className="days" role="group" aria-label="수업 요일">
           <span className="days-label">수업 요일</span>
           {DAY_ORDER.map((d) => (
@@ -235,30 +252,30 @@ export default function App() {
             <button type="button" className="link-btn" onClick={() => setSettings({ ...settings, days: [] })}>전체</button>
           )}
         </div>
+        )}
 
         <div className="row checks">
           <label><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> 접수종료·대기 포함</label>
           <label><input type="checkbox" checked={showAllTargets} onChange={(e) => setShowAllTargets(e.target.checked)} /> 대상 안 맞는 강좌 포함</label>
         </div>
+
+        {selected && (
+          <button className="lib-chip" onClick={() => setSelectedLib(null)}>
+            {selected.name}만 보는 중 <span aria-hidden>✕</span>
+            <span className="sr-only">선택 해제</span>
+          </button>
+        )}
       </nav>
 
-      <main className={`panes ${showMap ? 'map-on' : ''}`}>
-        <section className="pane-list" hidden={!isDesktop && view === 'map'}>
-          {selected && (
-            <button className="lib-chip" onClick={() => setSelectedLib(null)}>
-              {selected.name} <span aria-hidden>✕</span>
-              <span className="sr-only">선택 해제</span>
-            </button>
-          )}
-          {leftMode === 'calendar' ? (
-            <CalendarView rows={list} renderCard={renderCard} />
-          ) : list.length === 0 ? (
+      <main className="panes">
+        <section className="pane-list" hidden={!isDesktop && view !== 'list'}>
+          {list.length === 0 ? (
             <div className="empty">
               <h3>조건에 맞는 강좌가 없어요</h3>
               <p>
                 수집된 강좌 {courses.length}건 중 지금 조건에 맞는 게 없어요.
                 {days.length > 0 && ' 선택한 수업 요일을 해제하면 더 보여요.'}
-                {!showAllTargets && ' 아래 "대상 안 맞는 강좌 포함"을 켜면 전체를 볼 수 있어요.'}
+                {!showAllTargets && ' 위의 "대상 안 맞는 강좌 포함"을 켜면 전체를 볼 수 있어요.'}
               </p>
             </div>
           ) : (
@@ -281,17 +298,35 @@ export default function App() {
           </p>
         </section>
 
-        <section className="pane-map" hidden={!isDesktop && view !== 'map'}>
-          {(isDesktop || view === 'map') && (
-            <MapView counts={counts} selectedId={selectedLib} onSelect={setSelectedLib} />
-          )}
-        </section>
+        {isDesktop ? (
+          <div className="pane-right">
+            <section className="pane-cal" aria-label="행사일 달력">
+              <CalendarView rows={list} renderItem={renderCompact} compact />
+            </section>
+            <section className="pane-map">
+              <MapView counts={counts} selectedId={selectedLib} onSelect={setSelectedLib} />
+            </section>
+          </div>
+        ) : (
+          <>
+            {view === 'calendar' && (
+              <section className="pane-cal-m" aria-label="행사일 달력">
+                <CalendarView rows={list} renderItem={renderCard} />
+              </section>
+            )}
+            <section className="pane-map" hidden={view !== 'map'}>
+              {view === 'map' && (
+                <MapView counts={counts} selectedId={selectedLib} onSelect={setSelectedLib} />
+              )}
+            </section>
+          </>
+        )}
       </main>
 
       {!isDesktop && (
         <div className="viewbar">
-          <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>강좌 목록</button>
           <button className={view === 'calendar' ? 'on' : ''} onClick={() => setView('calendar')}>달력</button>
+          <button className={view === 'list' ? 'on' : ''} onClick={() => setView('list')}>강좌 목록</button>
           <button className={view === 'map' ? 'on' : ''} onClick={() => setView('map')}>지도 보기</button>
         </div>
       )}

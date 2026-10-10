@@ -225,3 +225,34 @@ i.cal-pill { min-width: 12px; height: 12px; line-height: 12px; padding: 0; verti
 .cal-legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 .cal-day h3 { margin: 4px 0 8px; font-size: 16px; }
 .cal-day-list { display: grid; gap: 10px; }
+
+/* 왼쪽 목록 패널: 스크롤 영역 안에서 항목이 찌그러지지 않도록 flex 로 배치 */
+.pane-list { display: flex; flex-direction: column; gap: 10px; }
+.pane-list > * { flex-shrink: 0; }
+.pane-list .view-seg, .pane-list .lib-chip { align-self: flex-start; }
+
+/* PC: 오른쪽 열 = 위 달력 / 아래 지도 */
+.pane-right { display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.pane-cal {
+  flex: 0 0 auto; max-height: 55%; overflow-y: auto; background: var(--surface);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px;
+}
+.pane-right .pane-map { flex: 1 1 0; height: auto; min-height: 220px; }
+.cal.compact { gap: 6px; }
+.cal.compact .cal-cell { min-height: 40px; padding: 3px 0; }
+.cal.compact .cal-num { font-size: 13px; }
+.cal.compact .cal-day h3 { font-size: 14px; margin: 2px 0 6px; }
+.cal-rows { display: grid; gap: 6px; }
+.cal-row {
+  display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; text-decoration: none;
+  color: inherit; border: 1px solid var(--line); border-left: 4px solid var(--closed); border-radius: 8px; padding: 6px 8px;
+}
+.cal-row.open { border-left-color: var(--open); }
+.cal-row.upcoming { border-left-color: var(--upcoming); }
+.cal-row:hover { background: var(--bg); }
+.cal-row-title { font-size: 14px; font-weight: 600; }
+.cal-row-sub { grid-column: 2; font-size: 12px; color: var(--muted); }
+.pane-cal-m { margin-top: 2px; }
+@media (min-width: 900px) {
+  .panes { grid-template-columns: minmax(380px, 460px) 1fr; }
+}

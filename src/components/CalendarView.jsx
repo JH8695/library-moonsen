@@ -6,7 +6,7 @@ const HEAD = [0, 1, 2, 3, 4, 5, 6]; // 일~토
 
 const timeKey = (c) => (c.classStart ? c.classStart.slice(11, 16) : '99:99');
 
-export default function CalendarView({ rows, renderCard }) {
+export default function CalendarView({ rows, renderItem, compact = false }) {
   const today = useMemo(() => toYmd(new Date()), []);
   const [cursor, setCursor] = useState(() => ({ y: +today.slice(0, 4), m: +today.slice(5, 7) }));
   const [sel, setSel] = useState(today);
@@ -56,7 +56,7 @@ export default function CalendarView({ rows, renderCard }) {
   const selDow = sel ? dowOfYmd(sel) : null;
 
   return (
-    <div className="cal">
+    <div className={`cal${compact ? ' compact' : ''}`}>
       <div className="cal-head">
         <button type="button" className="cal-nav" onClick={() => move(-1)} aria-label="이전 달">‹</button>
         <div className="cal-title">
@@ -126,7 +126,7 @@ export default function CalendarView({ rows, renderCard }) {
           {dayItems.length === 0 ? (
             <p className="hint">이 날 열리는 강좌가 없어요.</p>
           ) : (
-            <div className="cal-day-list">{dayItems.map(renderCard)}</div>
+            <div className={compact ? 'cal-rows' : 'cal-day-list'}>{dayItems.map(renderItem)}</div>
           )}
         </section>
       )}

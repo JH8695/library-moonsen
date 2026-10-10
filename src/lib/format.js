@@ -34,7 +34,10 @@ export function fmtDateTime(iso) {
 
 export function fmtClassSchedule(c) {
   if (!c.classStart) return '일정 확인 필요';
-  const noTime = c.timeKnown === false;
+  // 시각을 모르는 경우: 수집기가 표시했거나, 도서관 사이트가 (00:00~00:00)으로 비워 둔 경우
+  const noTime =
+    c.timeKnown === false ||
+    (fmtTime(c.classStart) === '00:00' && (!c.classEnd || fmtTime(c.classEnd) === '00:00'));
   if (!c.classEnd || sameDay(c.classStart, c.classEnd)) {
     if (noTime) return fmtDate(c.classStart);
     const end = c.classEnd ? `–${fmtTime(c.classEnd)}` : '';
@@ -56,4 +59,11 @@ export function fmtFetchedAt(iso) {
   return new Intl.DateTimeFormat('ko-KR', {
     timeZone: TZ, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date(iso));
+}
+
+// 수업 시작 시각 'HH:MM'. 모르면 ''. (시각 미지정 표기 00:00 은 모르는 것으로 취급)
+export function fmtStartTime(c) {
+  if (!c.classStart || c.timeKnown === false) return '';
+  const t = fmtTime(c.classStart);
+  return t === '00:00' && (!c.classEnd || fmtTime(c.classEnd) === '00:00') ? '' : t;
 }
