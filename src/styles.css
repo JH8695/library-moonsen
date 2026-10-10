@@ -158,3 +158,39 @@ select { padding: 7px 10px; border-radius: 10px; border: 1px solid var(--line); 
 }
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* 수업 요일 칩 */
+.days { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.days-label { font-size: 13px; color: var(--muted); margin-right: 2px; }
+.day {
+  width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line);
+  background: var(--surface); font-weight: 600; font-size: 14px;
+}
+.day.sat { color: #2b59c3; }
+.day.sun { color: #c0392b; }
+.day.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.link-btn { border: 0; background: transparent; color: var(--home); font-size: 13px; padding: 4px 6px; text-decoration: underline; }
+.link-btn.danger { color: #c0392b; }
+.edit-mini {
+  border: 1px solid var(--line); background: transparent; color: var(--muted);
+  border-radius: 999px; font-size: 12px; padding: 0 8px; line-height: 20px;
+}
+.outline { border: 1px solid var(--line); background: transparent; border-radius: 10px; padding: 11px; font-weight: 600; }
+
+/* 도서관 정보 수정 */
+.sheet.tall { max-height: 88dvh; overflow-y: auto; align-content: start; }
+.ed-top { display: flex; justify-content: space-between; align-items: center; }
+.ed-search { padding: 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font: inherit; color: inherit; }
+.ed-list { display: grid; gap: 10px; }
+.ed-row { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; display: grid; gap: 8px; }
+.ed-head { display: flex; align-items: center; gap: 8px; }
+.ed-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ed-grid label { display: grid; gap: 3px; font-size: 12px; color: var(--muted); }
+.ed-grid input {
+  padding: 9px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface);
+  font: inherit; font-size: 15px; color: var(--ink); min-width: 0;
+}
+.ed-backup summary { cursor: pointer; font-size: 14px; color: var(--muted); padding: 6px 0; }
+.ed-backup-body { display: grid; gap: 8px; padding-top: 6px; }
+.ed-backup textarea { border-radius: 8px; border: 1px solid var(--line); padding: 8px; font: inherit; background: var(--surface); color: var(--ink); }
+.primary:disabled { opacity: .4; }

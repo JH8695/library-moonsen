@@ -7,9 +7,20 @@ export const ORIGIN = {
   address: '서울특별시 강남구 언주로 110',
 };
 
+// 동 이름: 강남구통합도서관 사이트의 "도서관 바로가기" 목록에 적힌 행정동 (별관은 표기 없음)
+// station 은 { name: '학동역', walkMin: 10 } 형태. 앱의 "도서관 정보 수정"에서도 바꿀 수 있어요.
+const DONG = {
+  dogok: '도곡1동', gaepo: '개포3동', nonhyeon: '논현2동', 'nonhyeon-maru': '논현1동',
+  daechi1: '대치1동', daechi: '대치2동', motgol: '자곡동', 'motgol-hanok': '자곡동',
+  samsung: '삼성1동', segok: '세곡동', 'segok-maru': '세곡동', yeoksam2: '역삼2동',
+  yeoksam: '역삼1동', 'yeoksam-pureunsol': '역삼1동', yeollin: '일원본동',
+  'ilwon-raon': '개포2동', jeongdaun: '청담동', jeulgeoun: '대치4동', cheongdam: '청담동',
+  haengbokan: '대치2동',
+};
+
 const g = (id, name, address, driveMin, range) => ({
   id, name, region: 'gangnam', address,
-  driveMin, driveRange: range, station: null, lat: null, lng: null,
+  driveMin, driveRange: range, station: null, dong: DONG[id] ?? null, lat: null, lng: null,
 });
 
 export const LIBRARIES = [
@@ -38,7 +49,7 @@ export const LIBRARIES = [
     // 주소·운전시간 미조사: 지도에서는 키워드 검색으로 위치를 찾습니다.
     id: 'yangjae', name: '서초구립양재도서관', region: 'seocho',
     address: null, query: '서초구립양재도서관',
-    driveMin: null, driveRange: null, station: null, lat: null, lng: null,
+    driveMin: null, driveRange: null, station: null, dong: null, lat: null, lng: null,
   },
 ];
 

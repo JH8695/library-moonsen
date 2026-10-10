@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { LIBRARIES, LIBRARY_BY_ID, REGIONS } from './data/libraries';
+import { REGIONS } from './data/libraries';
 import { gradeOn, koreanAge, gradeLabel, matchTarget, academicYear } from './lib/grade';
 import { fmtFetchedAt } from './lib/format';
 import { useSettings } from './lib/useSettings';
 import { useCourses } from './lib/useCourses';
+import { useLibraries } from './lib/useLibraries';
+import { DAY_LABELS, DAY_ORDER, classWeekdays, passesDays } from './lib/weekdays';
 import CourseCard from './components/CourseCard';
 import MapView from './components/MapView';
 import Settings from './components/Settings';
+import LibraryEditor from './components/LibraryEditor';
 
 const TABS = [
   { id: 'all', label: '전체' },
@@ -36,6 +39,8 @@ const t = (iso) => (iso ? new Date(iso).getTime() : Infinity);
 export default function App() {
   const [settings, setSettings] = useSettings();
   const { courses, meta } = useCourses();
+  const L = useLibraries();
+  const { libs, byId } = L;
   const isDesktop = useMedia('(min-width: 900px)');
 
   const [tab, setTab] = useState('all');
@@ -46,6 +51,10 @@ export default function App() {
   const [showClosed, setShowClosed] = useState(false);
   const [showAllTargets, setShowAllTargets] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [editor, setEditor] = useState(null); // null | { focusId: string | null }
+  const days = settings.days ?? [];
+  const toggleDay = (d) =>
+    setSettings({ ...settings, days: days.includes(d) ? days.filter((x) => x !== d) : [...days, d] });
 
   const now = useMemo(() => new Date(), []);
   const currentGrade = settings.gradeOverride ?? gradeOn(settings.birthYear, now);
@@ -59,20 +68,26 @@ export default function App() {
       const birth = settings.gradeOverride
         ? academicYear(ref) - gradeAtClass - 6
         : settings.birthYear;
-      return { course: c, gradeAtClass, match: matchTarget(c.targetText, gradeAtClass, age, birth) };
+      return {
+        course: c,
+        gradeAtClass,
+        match: matchTarget(c.targetText, gradeAtClass, age, birth),
+        daySet: classWeekdays(c),
+      };
     });
   }, [courses, settings, now]);
 
   // 대상 + 상태 필터 (도서관/지역 선택 전) → 지도 핀 개수의 기준
   const base = useMemo(() => {
-    return enriched.filter(({ course, match }) => {
+    return enriched.filter(({ course, match, daySet }) => {
       if (!showAllTargets && match.result === 'nomatch') return false;
+      if (!passesDays(days, daySet)) return false;
       const s = course.status;
       if (tab === 'open') return s === 'open';
       if (tab === 'upcoming') return s === 'upcoming';
       return s === 'open' || s === 'upcoming' || showClosed;
     });
-  }, [enriched, tab, showClosed, showAllTargets]);
+  }, [enriched, tab, showClosed, showAllTargets, days]);
 
   const counts = useMemo(() => {
     const m = {};
@@ -81,17 +96,19 @@ export default function App() {
   }, [base]);
 
   const tabCounts = useMemo(() => {
-    const ok = enriched.filter((e) => showAllTargets || e.match.result !== 'nomatch');
+    const ok = enriched.filter(
+      (e) => (showAllTargets || e.match.result !== 'nomatch') && passesDays(days, e.daySet),
+    );
     return {
       all: ok.filter((e) => ['open', 'upcoming'].includes(e.course.status) || showClosed).length,
       open: ok.filter((e) => e.course.status === 'open').length,
       upcoming: ok.filter((e) => e.course.status === 'upcoming').length,
     };
-  }, [enriched, showClosed, showAllTargets]);
+  }, [enriched, showClosed, showAllTargets, days]);
 
   const list = useMemo(() => {
     const rows = base.filter(({ course }) => {
-      const lib = LIBRARY_BY_ID[course.libraryId];
+      const lib = byId[course.libraryId];
       if (region !== 'all' && lib?.region !== region) return false;
       if (selectedLib && course.libraryId !== selectedLib) return false;
       return true;
@@ -99,10 +116,10 @@ export default function App() {
     const key = {
       applyStart: ({ course: c }) => t(c.applyStart),
       classDate: ({ course: c }) => t(c.classStart),
-      drive: ({ course: c }) => LIBRARY_BY_ID[c.libraryId]?.driveMin ?? Infinity,
+      drive: ({ course: c }) => byId[c.libraryId]?.driveMin ?? Infinity,
     }[sort];
     return [...rows].sort((a, b) => key(a) - key(b) || t(a.course.classStart) - t(b.course.classStart));
-  }, [base, region, selectedLib, sort]);
+  }, [base, region, selectedLib, sort, byId]);
 
   const collectedByLib = useMemo(() => {
     const m = {};
@@ -110,7 +127,7 @@ export default function App() {
     return m;
   }, [courses]);
 
-  const selected = selectedLib ? LIBRARY_BY_ID[selectedLib] : null;
+  const selected = selectedLib ? byId[selectedLib] : null;
   const showMap = isDesktop || view === 'map';
   const hasErrors = meta.errors?.length > 0;
 
@@ -175,6 +192,24 @@ export default function App() {
           </select>
         </div>
 
+        <div className="days" role="group" aria-label="수업 요일">
+          <span className="days-label">수업 요일</span>
+          {DAY_ORDER.map((d) => (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={days.includes(d)}
+              className={`day${days.includes(d) ? ' on' : ''}${d === 0 ? ' sun' : d === 6 ? ' sat' : ''}`}
+              onClick={() => toggleDay(d)}
+            >
+              {DAY_LABELS[d]}
+            </button>
+          ))}
+          {days.length > 0 && (
+            <button type="button" className="link-btn" onClick={() => setSettings({ ...settings, days: [] })}>전체</button>
+          )}
+        </div>
+
         <div className="row checks">
           <label><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> 접수종료·대기 포함</label>
           <label><input type="checkbox" checked={showAllTargets} onChange={(e) => setShowAllTargets(e.target.checked)} /> 대상 안 맞는 강좌 포함</label>
@@ -194,6 +229,7 @@ export default function App() {
               <h3>조건에 맞는 강좌가 없어요</h3>
               <p>
                 수집된 강좌 {courses.length}건 중 지금 조건에 맞는 게 없어요.
+                {days.length > 0 && ' 선택한 수업 요일을 해제하면 더 보여요.'}
                 {!showAllTargets && ' 아래 "대상 안 맞는 강좌 포함"을 켜면 전체를 볼 수 있어요.'}
               </p>
             </div>
@@ -202,17 +238,18 @@ export default function App() {
               <CourseCard
                 key={course.id}
                 course={course}
-                lib={LIBRARY_BY_ID[course.libraryId]}
+                lib={byId[course.libraryId]}
                 match={match}
                 gradeAtClass={gradeAtClass}
                 currentGrade={currentGrade}
+                onEditLib={(id) => setEditor({ focusId: id })}
               />
             ))
           )}
           <details className="foot">
             <summary>도서관별 수집 현황 (총 {courses.length}건)</summary>
             <p>
-              {LIBRARIES.map((l) => `${l.name} ${collectedByLib[l.id] ?? 0}`).join(' · ')}
+              {libs.map((l) => `${l.name} ${collectedByLib[l.id] ?? 0}`).join(' · ')}
               {collectedByLib.__none ? ` · 도서관 미분류 ${collectedByLib.__none}` : ''}
             </p>
             <p>접수예정·접수중·대기·접수마감(수업 전) 강좌를 모두 센 값이에요. 0인 도서관은 지금 해당 강좌가 없거나 수집이 안 된 거예요.</p>
@@ -243,6 +280,21 @@ export default function App() {
           setSettings={setSettings}
           currentGrade={gradeOn(settings.birthYear, now)}
           onClose={() => setSettingsOpen(false)}
+          onOpenLibs={() => { setSettingsOpen(false); setEditor({ focusId: null }); }}
+        />
+      )}
+
+      {editor && (
+        <LibraryEditor
+          libs={libs}
+          focusId={editor.focusId}
+          onFocus={(id) => setEditor({ focusId: id })}
+          onChange={L.update}
+          onReset={L.reset}
+          onResetAll={L.resetAll}
+          exportJson={L.exportJson}
+          importJson={L.importJson}
+          onClose={() => setEditor(null)}
         />
       )}
     </div>

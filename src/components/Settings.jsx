@@ -1,6 +1,6 @@
 import { gradeLabel } from '../lib/grade';
 
-export default function Settings({ settings, setSettings, currentGrade, onClose }) {
+export default function Settings({ settings, setSettings, currentGrade, onClose, onOpenLibs }) {
   const years = [];
   for (let y = 2010; y <= 2023; y++) years.push(y);
 
@@ -39,6 +39,8 @@ export default function Settings({ settings, setSettings, currentGrade, onClose 
             ))}
           </select>
         </label>
+
+        <button className="outline" onClick={onOpenLibs}>도서관 정보 수정 (차 시간 · 지하철역 · 동)</button>
 
         <p className="hint">설정은 이 기기의 브라우저에만 저장되고 어디로도 전송되지 않아요.</p>
         <button className="primary" onClick={onClose}>닫기</button>

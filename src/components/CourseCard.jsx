@@ -8,25 +8,31 @@ const STATUS = {
   closed: { label: '접수종료', cls: 'closed' },
 };
 
-export function DriveInfo({ lib }) {
+export function DriveInfo({ lib, onEdit }) {
   if (!lib) return null;
   return (
     <span className="meta-line">
       {lib.driveMin != null ? (
-        <span title={lib.driveRange ? `참고 범위 ${lib.driveRange[0]}~${lib.driveRange[1]}분 (미검증)` : ''}>
+        <span title={lib.driveRange && !lib.edited ? `참고 범위 ${lib.driveRange[0]}~${lib.driveRange[1]}분 (미검증)` : ''}>
           🚗 약 {lib.driveMin}분
         </span>
       ) : (
-        <span className="muted">🚗 확인 전</span>
+        <span className="muted">🚗 시간 미입력</span>
       )}
       {lib.station && (
-        <span>🚇 {lib.station.name}{lib.station.walkMin ? ` 도보 ${lib.station.walkMin}분` : ''}</span>
+        <span>🚇 {lib.station.name}{lib.station.walkMin != null ? ` 도보 ${lib.station.walkMin}분` : ''}</span>
+      )}
+      {lib.dong && <span>📍 {lib.dong}</span>}
+      {onEdit && (
+        <button type="button" className="edit-mini" onClick={() => onEdit(lib.id)} aria-label={`${lib.name} 차 시간·역·동 수정`}>
+          수정
+        </button>
       )}
     </span>
   );
 }
 
-export default function CourseCard({ course, lib, match, gradeAtClass, currentGrade }) {
+export default function CourseCard({ course, lib, match, gradeAtClass, currentGrade, onEditLib }) {
   const st = STATUS[course.status] ?? STATUS.closed;
   const dday =
     course.status === 'upcoming' && course.applyStart ? daysUntil(course.applyStart) : null;
@@ -52,7 +58,7 @@ export default function CourseCard({ course, lib, match, gradeAtClass, currentGr
 
       <div className="card-lib">
         <strong>{lib?.name ?? course.libraryId}</strong>
-        <DriveInfo lib={lib} />
+        <DriveInfo lib={lib} onEdit={onEditLib} />
       </div>
 
       <dl className="rows">
