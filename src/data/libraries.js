@@ -46,6 +46,12 @@ export const LIBRARIES = [
   g('cheongdam', '청담도서관', '서울특별시 강남구 압구정로79길 26', 19, [16, 21]),
   g('haengbokan', '행복한도서관', '서울특별시 강남구 영동대로65길 24', 10, [8, 12]),
   {
+    // 국립어린이청소년도서관 (강남구 역삼동). 주소는 공개 자료 기준, 차 시간은 아직 미입력 → 앱의 "수정"에서 입력하세요.
+    id: 'nlcy', name: '국립어린이청소년도서관', region: 'national',
+    address: '서울특별시 강남구 테헤란로7길 21',
+    driveMin: null, driveRange: null, station: null, dong: '역삼동', lat: null, lng: null,
+  },
+  {
     // 주소·운전시간 미조사: 지도에서는 키워드 검색으로 위치를 찾습니다.
     id: 'yangjae', name: '서초구립양재도서관', region: 'seocho',
     address: null, query: '서초구립양재도서관',

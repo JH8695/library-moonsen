@@ -1,101 +1,83 @@
-import assert from 'node:assert/strict';
-import { SYNC_KEYS, bumpStamps, mergeUnion, pickSync, reconcile, signature } from '../src/lib/sync.js';
+// 가짜 클라우드(문서 1개)를 두 기기(PC, 폰)가 공유하는 상황을 흉내 내서 동기화 규칙을 검증
+import { createSyncEngine, same } from '../src/lib/syncEngine.js';
 
-const S = (over = {}, stamps = {}) => ({
-  kids: [{ id: 'k1', label: 'a', birthYear: 2020 }], activeKids: [], days: [],
-  favs: [], hidden: [], notes: {}, _stamps: stamps, ...over,
-});
-const R = (over = {}, stamps = {}) => ({ data: pickSync(S(over)), stamps });
-
-// ---- bumpStamps: 바뀐 항목만 시각 갱신 ----
-{
-  const prev = S({ favs: ['a'] }, { favs: 1 });
-  const next = bumpStamps(prev, { ...prev, favs: ['a', 'b'], hidden: ['x'] }, 100);
-  assert.equal(next._stamps.favs, 100);
-  assert.equal(next._stamps.hidden, 100);
-  assert.equal(next._stamps.notes, undefined);
-  const nochange = bumpStamps(prev, { ...prev }, 200);
-  assert.equal(nochange._stamps.favs, 1); // 안 바뀌면 그대로
+function fakeCloud() {
+  let data = null; const subs = new Set(); let writes = 0;
+  const emit = () => { const snap = data ? JSON.parse(JSON.stringify(data)) : null; for (const f of subs) queueMicrotask(() => f(snap)); };
+  return {
+    writes: () => writes, peek: () => JSON.parse(JSON.stringify(data)),
+    silentSet: (sec, v) => { data = data || {}; data[sec] = JSON.parse(JSON.stringify(v)); }, // 알림 없이 서버 값만 바뀜(알림을 놓친 상황)
+    store: {
+      async fetchServer() { return data ? JSON.parse(JSON.stringify(data)) : null; },
+      async waitWrites() {},
+      subscribe(cb) { subs.add(cb); queueMicrotask(() => cb(data ? JSON.parse(JSON.stringify(data)) : null)); return () => subs.delete(cb); },
+      async hide(id, ts) { writes++; data = data || {}; data.hidden = { ...(data.hidden || {}), [id]: ts }; emit(); },
+      async unhide(id) { writes++; if (!data?.hidden) return; const h = { ...data.hidden }; delete h[id]; data.hidden = h; emit(); },
+      async putSection(sec, v) { writes++; data = data || {}; data[sec] = JSON.parse(JSON.stringify(v)); emit(); },
+    },
+  };
 }
 
-// ---- 서버에 문서가 없을 때: 내 것을 올림 ----
-{
-  const r = reconcile(S({ favs: ['a'] }), null, { now: 50 });
-  assert.deepEqual(r.values.favs, ['a']);
-  assert.equal(r.remoteChanged, true);
-  assert.equal(r.localChanged, false);
-  assert.equal(r.stamps.favs, 50);
+function device(name, cloud, init) {
+  const state = { hidden: {}, prefs: { birthYear: 2017, gradeOverride: null, days: [] }, libs: {}, ...init };
+  const mem = {}; const storage = { getItem: (k) => mem[k] ?? null, setItem: (k, v) => { mem[k] = v; } };
+  let engine;
+  const local = {
+    get: (s) => state[s],
+    set: (s, v) => { state[s] = JSON.parse(JSON.stringify(v)); queueMicrotask(() => engine.localChanged(s, state[s])); }, // React effect 흉내
+  };
+  engine = createSyncEngine({ store: cloud.store, local, storage, flagKey: 'k', onStatus: (s, e) => { if (s === 'error') console.log('  !! 오류', name, e); } });
+  return {
+    state, start: () => engine.start(), refresh: () => engine.refresh(),
+    change: (s, v) => { state[s] = v; engine.localChanged(s, v); }, // 사용자가 이 기기에서 값을 바꿈
+  };
 }
+const tick = () => new Promise((r) => setTimeout(r, 20));
+let bad = 0;
+const check = (name, ok) => { if (!ok) bad++; console.log(ok ? 'OK ' : 'XX ', name); };
 
-// ---- 평소: 항목별로 나중에 고친 쪽이 이김 ----
-{
-  const local = S({ favs: ['a'], hidden: ['h1'] }, { favs: 10, hidden: 30 });
-  const remote = R({ favs: ['a', 'b'], hidden: [] }, { favs: 20, hidden: 5, notes: 1, kids: 1, activeKids: 1, days: 1 });
-  const r = reconcile(local, remote, { now: 99 });
-  assert.deepEqual(r.values.favs, ['a', 'b']); // 서버가 더 최근
-  assert.deepEqual(r.values.hidden, ['h1']); // 내 기기가 더 최근
-  assert.equal(r.localChanged, true);
-  assert.equal(r.remoteChanged, true); // 서버에도 내 hidden 을 올려야 함
-}
+const cloud = fakeCloud();
+// 1) PC 가 먼저 로그인 (숨김 a, 출생연도 2016 으로 바꿔둠)
+const pc = device('PC', cloud, { hidden: { a: 1 }, prefs: { birthYear: 2016, gradeOverride: null, days: [6] } });
+pc.start(); await tick();
+check('PC 첫 로그인: 숨김·설정이 클라우드로 올라감', same(cloud.peek().hidden, { a: 1 }) && cloud.peek().prefs.birthYear === 2016);
 
-// ---- 지운 것이 되살아나지 않음 ----
-{
-  const local = S({ favs: [] }, { favs: 200 }); // PC 에서 찜 해제(나중)
-  const remote = R({ favs: ['a'] }, { favs: 100 });
-  const r = reconcile(local, remote);
-  assert.deepEqual(r.values.favs, []);
-  const back = reconcile(S({ favs: ['a'] }, { favs: 100 }), { data: { ...pickSync(S()), favs: [] }, stamps: { favs: 200 } });
-  assert.deepEqual(back.values.favs, []); // 반대쪽 기기에도 해제가 전달됨
-}
+// 2) 폰이 로그인 (숨김 b, 기본 설정) → 숨김은 합치고, 설정은 계정 것을 받음
+const phone = device('폰', cloud, { hidden: { b: 2 } });
+phone.start(); await tick();
+check('폰 첫 로그인: 숨김 합집합 (a,b)', same(phone.state.hidden, { a: 1, b: 2 }) && same(cloud.peek().hidden, { a: 1, b: 2 }));
+check('폰 첫 로그인: 출생연도·요일을 계정 것(2016, 토)으로 받음', phone.state.prefs.birthYear === 2016 && same(phone.state.prefs.days, [6]));
+await tick();
+check('PC 에도 폰이 숨긴 b 가 반영됨', same(pc.state.hidden, { a: 1, b: 2 }));
 
-// ---- 같은 시각이면 서버 것을 따름 ----
-{
-  const r = reconcile(S({ favs: ['x'] }, { favs: 5 }), R({ favs: ['y'] }, { favs: 5 }));
-  assert.deepEqual(r.values.favs, ['y']);
-}
+// 3) PC 에서 a 숨김 해제 → 폰에서도 사라짐
+const w0 = cloud.writes();
+const h = { ...pc.state.hidden }; delete h.a; pc.change('hidden', h); await tick();
+check('PC 숨김 해제 → 폰 반영', same(phone.state.hidden, { b: 2 }) && same(cloud.peek().hidden, { b: 2 }));
 
-// ---- 처음 연결: 찜·숨김·메모는 합침 ----
-{
-  const local = S({ favs: ['a'], hidden: ['h1'], notes: { S1: { text: '폰 메모', dates: [] } }, days: [1] });
-  const remote = R({ favs: ['b'], hidden: ['h2'], notes: { S2: { text: 'PC 메모', dates: [] } }, days: [2] });
-  const r = reconcile(local, remote, { firstLink: true, now: 7 });
-  assert.deepEqual(r.values.favs.sort(), ['a', 'b']);
-  assert.deepEqual(r.values.hidden.sort(), ['h1', 'h2']);
-  assert.deepEqual(Object.keys(r.values.notes).sort(), ['S1', 'S2']);
-  assert.deepEqual(r.values.days, [2]); // 취향 설정은 계정 쪽
-  assert.equal(r.stamps.favs, 7);
-  // 같은 예약에 양쪽 메모가 있으면 내 기기 것
-  const both = reconcile(S({ notes: { S1: { text: '내 것', dates: [] } } }), R({ notes: { S1: { text: '서버 것', dates: [] } } }), { firstLink: true });
-  assert.equal(both.values.notes.S1.text, '내 것');
-}
+// 4) 두 기기가 거의 동시에 서로 다른 강좌를 숨김 → 둘 다 남음
+const pc2 = { ...pc.state.hidden, c: 3 }, ph2 = { ...phone.state.hidden, d: 4 };
+pc.change('hidden', pc2); phone.change('hidden', ph2); await tick(); await tick();
+check('동시에 숨겨도 서로 안 지워짐 (b,c,d)', same(cloud.peek().hidden, { b: 2, c: 3, d: 4 }) && same(pc.state.hidden, phone.state.hidden));
 
-// ---- 링크로 합치기: 취향은 내 기기 유지 ----
-{
-  const m = mergeUnion(pickSync(S({ favs: ['a'], days: [1] })), pickSync(S({ favs: ['b'], days: [2] })), { prefs: 'local' });
-  assert.deepEqual(m.favs.sort(), ['a', 'b']);
-  assert.deepEqual(m.days, [1]);
-}
+// 5) 폰에서 출생연도 변경 → PC 반영
+phone.change('prefs', { ...phone.state.prefs, birthYear: 2015 }); await tick();
+check('폰 설정 변경 → PC 반영', pc.state.prefs.birthYear === 2015);
 
-// ---- 수렴: 합친 결과를 다시 합쳐도 변하지 않음 ----
-{
-  const local = S({ favs: ['a'], hidden: ['h1'] }, { favs: 10, hidden: 30 });
-  const remote = R({ favs: ['a', 'b'] }, { favs: 20 });
-  const r1 = reconcile(local, remote, { now: 99 });
-  const afterLocal = { ...local, ...r1.values, _stamps: r1.stamps };
-  const afterRemote = { data: r1.values, stamps: r1.stamps };
-  const r2 = reconcile(afterLocal, afterRemote, { now: 150 });
-  assert.equal(r2.localChanged, false);
-  assert.equal(r2.remoteChanged, false);
-  assert.equal(signature(r2.values, r2.stamps), signature(r1.values, r1.stamps));
-}
+// 6) 도서관 정보 수정(libs) 동기화
+pc.change('libs', { jeongdaun: { driveMin: 15, stationName: '학동역', walkMin: 10, dong: '청담동' } }); await tick();
+check('PC 도서관 정보 수정 → 폰 반영', phone.state.libs.jeongdaun?.stationName === '학동역');
+phone.change('libs', {}); await tick();
+check('폰에서 전체 초기화 → PC 도 초기화', same(pc.state.libs, {}));
 
-// ---- 서버 문서에 없는 항목은 내 것을 유지 ----
-{
-  const remote = { data: { favs: ['z'] }, stamps: { favs: 50 } };
-  const r = reconcile(S({ hidden: ['h'] }, { hidden: 1 }), remote);
-  assert.deepEqual(r.values.hidden, ['h']);
-  assert.deepEqual(r.values.favs, ['z']);
-}
+// 6-2) 알림을 놓쳐도 "지금 동기화"를 누르면 서버의 최신 값을 받아옴
+cloud.silentSet('prefs', { kids: [{ id: 'k1', name: '큰아이', birthYear: 2018 }], days: [] });
+await tick();
+check('알림을 놓친 상태에서는 아직 옛 값', pc.state.prefs.birthYear === 2015);
+await pc.refresh(); await tick();
+check('"지금 동기화" → 서버 최신 값(2018)을 받아옴', pc.state.prefs.kids?.[0]?.birthYear === 2018);
 
-assert.equal(SYNC_KEYS.length, 6);
-console.log('sync.test.mjs OK');
+// 7) 핑퐁(무한 쓰기) 없음: 가만히 둔 동안 쓰기가 늘지 않음
+const before = cloud.writes(); await tick(); await tick(); await tick();
+check(`가만히 있으면 쓰기 없음 (${cloud.writes() - before}회)`, cloud.writes() === before);
+console.log(bad ? `\n${bad}건 실패` : '\n동기화 규칙 전부 통과');

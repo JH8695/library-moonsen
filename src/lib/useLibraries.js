@@ -46,26 +46,32 @@ export function useLibraries() {
   const reset = (id) => setOv((prev) => { const n = { ...prev }; delete n[id]; return n; });
   const resetAll = () => setOv({});
   const exportJson = () => JSON.stringify(ov);
+  // 외부(붙여넣기·클라우드)에서 들어온 값은 항상 이 함수로 검증해서 사용
+  const sanitize = (o) => {
+    const clean = {};
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return clean;
+    for (const [id, v] of Object.entries(o)) {
+      if (!LIBRARIES.some((l) => l.id === id) || !v || typeof v !== 'object') continue;
+      clean[id] = {
+        driveMin: num(v.driveMin),
+        stationName: String(v.stationName ?? '').slice(0, 30),
+        walkMin: num(v.walkMin),
+        dong: String(v.dong ?? '').slice(0, 20),
+      };
+    }
+    return clean;
+  };
+  const setOverrides = (v) => setOv(sanitize(v));
   const importJson = (text) => {
     try {
       const o = JSON.parse(text);
       if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error('bad');
-      const clean = {};
-      for (const [id, v] of Object.entries(o)) {
-        if (!LIBRARIES.some((l) => l.id === id) || !v || typeof v !== 'object') continue;
-        clean[id] = {
-          driveMin: num(v.driveMin),
-          stationName: String(v.stationName ?? '').slice(0, 30),
-          walkMin: num(v.walkMin),
-          dong: String(v.dong ?? '').slice(0, 20),
-        };
-      }
-      setOv(clean);
+      setOv(sanitize(o));
       return null;
     } catch {
       return '형식이 올바르지 않아요. "복사" 버튼으로 복사한 내용을 그대로 붙여넣어 주세요.';
     }
   };
 
-  return { libs, byId, update, reset, resetAll, exportJson, importJson, baseFields };
+  return { libs, byId, update, reset, resetAll, exportJson, importJson, baseFields, overrides: ov, setOverrides };
 }

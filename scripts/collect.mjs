@@ -2,6 +2,7 @@
 // 개인용으로 1시간에 한 번, 소수의 페이지만, 요청 사이에 간격을 두고 읽습니다.
 import fs from 'node:fs/promises';
 import { collectGangnamWith } from './gangnam.mjs';
+import { collectNlcyWith } from './nlcy.mjs';
 import { API_URL as YJ_API, parseYangjae } from './yangjae.mjs';
 
 const UA = 'library-courses-personal/0.1 (personal, hourly)';
@@ -64,6 +65,19 @@ async function collectYangjae() {
   return { courses: keep, warnings };
 }
 
+// 국립어린이청소년도서관: 문체부 어린이누리집 목록 경유 (nlcy.go.kr 은 자동 접근 불허)
+// 접수중·접수예정·대기는 모두 남기고, 접수마감은 수업이 아직 안 끝난 것만 남김
+async function collectNlcy() {
+  const r = await collectNlcyWith({ getHtml, sleep, delayMs: DELAY_MS });
+  const now = Date.now();
+  const keep = r.courses.filter(
+    (c) =>
+      ['open', 'upcoming', 'waitlist'].includes(c.status) ||
+      (c.status === 'closed' && c.classEnd && new Date(c.classEnd).getTime() + 86400000 >= now),
+  );
+  return { courses: keep, warnings: r.warnings, total: r.courses.length };
+}
+
 const meta = { fetchedAt: new Date().toISOString(), errors: [], warnings: [] };
 let courses = [];
 
@@ -95,6 +109,17 @@ try {
 } catch (e) {
   meta.errors.push({ source: '양재도서관', message: describe(e) });
   console.error('양재 수집 실패:', e);
+}
+
+try {
+  const n = await collectNlcy();
+  courses.push(...n.courses);
+  meta.warnings.push(...n.warnings);
+  console.log(`국립어린이청소년도서관(문체부 경유): ${n.courses.length}건 (읽은 ${n.total}건), 경고 ${n.warnings.length}건`);
+  if (n.total === 0) meta.errors.push({ source: '국립어린이청소년도서관', message: '목록을 읽지 못했어요' });
+} catch (e) {
+  meta.errors.push({ source: '국립어린이청소년도서관', message: describe(e) });
+  console.error('국립어린이청소년도서관 수집 실패:', e);
 }
 
 await fs.mkdir('public/data', { recursive: true });

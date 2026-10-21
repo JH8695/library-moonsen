@@ -1,183 +1,99 @@
-import { useState } from 'react';
-import { gradeLabel, gradeOn } from '../lib/grade';
-import { buildExport, buildShareLink, parseImport } from '../lib/backup';
+import { gradeOn, stageLabel } from '../lib/grade';
+import { MAX_KIDS } from '../lib/useSettings';
 
+const thisYear = new Date().getFullYear();
 const YEARS = [];
-for (let y = 2010; y <= 2025; y++) YEARS.push(y);
+for (let y = thisYear; y >= thisYear - 19; y--) YEARS.push(y);
 
-export default function Settings({ settings, setSettings, now, sync, onClose, onOpenLibs }) {
-  const [exportText, setExportText] = useState('');
-  const [importText, setImportText] = useState('');
-  const [backupMsg, setBackupMsg] = useState('');
-  const [kidMsg, setKidMsg] = useState('');
+const timeText = (d) =>
+  d ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: '2-digit' }).format(d) : '';
 
-  const setKid = (id, patch) =>
-    setSettings({ ...settings, kids: settings.kids.map((k) => (k.id === id ? { ...k, ...patch } : k)) });
-  const removeKid = (id) =>
-    setSettings({
-      ...settings,
-      kids: settings.kids.filter((k) => k.id !== id),
-      activeKids: settings.activeKids.filter((x) => x !== id),
-    });
-  const addKid = () =>
-    setSettings({
-      ...settings,
-      kids: [...settings.kids, { id: `k${Date.now()}`, label: `아이${settings.kids.length + 1}`, birthYear: 2019 }],
-    });
-
-  // 체험 앱에서 입력해 둔 아이 정보 가져오기 (같은 구글 계정)
-  const importKids = async () => {
-    setKidMsg('');
-    const kids = await sync.fetchSharedKids();
-    if (!kids?.length) {
-      setKidMsg('체험 앱에 저장된 아이 정보를 찾지 못했어요. 체험 앱에서 같은 구글 계정으로 로그인해 동기화한 뒤 다시 눌러 주세요.');
-      return;
-    }
-    const names = kids.map((k) => `${k.label} ${k.birthYear}년생`).join(', ');
-    if (!window.confirm(`체험 앱의 아이 ${kids.length}명으로 바꿀까요?\n${names}`)) return;
-    setSettings((s) => ({
-      ...s,
-      kids: kids.map((k) => ({ id: k.id, label: k.label, birthYear: k.birthYear })),
-      activeKids: [],
-    }));
-    setKidMsg('가져왔어요.');
+export default function Settings({ settings, setSettings, onClose, onOpenLibs, account, hiddenTotal, onUnhideAll }) {
+  const kids = settings.kids;
+  const now = new Date();
+  const setKids = (next) => setSettings({ ...settings, kids: next });
+  const update = (id, patch) => setKids(kids.map((k) => (k.id === id ? { ...k, ...patch } : k)));
+  const add = () => {
+    if (kids.length >= MAX_KIDS) return;
+    setKids([...kids, { id: `k${Date.now().toString(36)}`, name: `아이${kids.length + 1}`, birthYear: thisYear - 6 }]);
   };
-
-  const doCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(exportText);
-      setBackupMsg('복사했어요. 다른 기기의 "가져오기" 칸에 붙여넣으세요.');
-    } catch {
-      setBackupMsg('자동 복사가 안 돼요. 위 글을 길게 눌러 직접 복사해 주세요.');
-    }
-  };
-  const doShareLink = async () => {
-    const link = buildShareLink(settings, `${window.location.origin}${window.location.pathname}`);
-    try {
-      await navigator.clipboard.writeText(link);
-      setBackupMsg('링크를 복사했어요. 다른 기기에서 열면 합칠지 물어봐요. (메시지 앱에 붙여넣어 나에게 보내면 편해요)');
-    } catch {
-      setExportText(link);
-      setBackupMsg('자동 복사가 안 돼요. 아래 글을 길게 눌러 직접 복사해 주세요.');
-    }
-  };
-  const doImport = () => {
-    const r = parseImport(importText);
-    if (r.error) { setBackupMsg(r.error); return; }
-    if (!window.confirm('이 기기의 설정·찜·숨김·메모를 가져온 내용으로 덮어쓸까요?')) return;
-    setSettings((cur) => ({ ...cur, ...r.settings }));
-    setImportText('');
-    setBackupMsg('가져왔어요.');
+  const remove = (id) => {
+    if (kids.length <= 1) return;
+    setKids(kids.filter((k) => k.id !== id));
   };
 
   return (
     <div className="sheet-backdrop" onClick={onClose}>
       <div className="sheet tall" role="dialog" aria-label="설정" onClick={(e) => e.stopPropagation()}>
-        <h2>설정</h2>
+        <div className="ed-top">
+          <h2>우리 아이 설정</h2>
+          <button className="link-btn" onClick={onClose}>닫기</button>
+        </div>
 
-        {sync && (
-          <section className="sync-box">
-            <h3>☁️ 폰·PC 동기화 (Google)</h3>
-            {sync.user ? (
+        {account && (
+          <section className="acct" aria-label="폰·PC 동기화">
+            <h3>☁ 폰·PC 동기화 (Google)</h3>
+            {!account.configured ? (
+              <p className="hint">Firebase 설정이 없어서 로그인 기능이 꺼져 있어요. 설정은 이 기기에서만 저장돼요.</p>
+            ) : account.user ? (
               <>
-                <p className="sync-user">{sync.user.name} <small>{sync.user.email}</small></p>
-                <p className="hint">
-                  {{ syncing: '동기화 중…', ok: '동기화됨', offline: '오프라인 · 연결되면 다시 시도해요', loading: '연결 중…' }[sync.phase] ?? ''}
-                  {sync.phase === 'ok' && sync.last ? ` · ${new Date(sync.last).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+                <p className="acct-who">
+                  <strong>{account.user.name || '로그인됨'}</strong> <span>{account.user.email}</span>
                 </p>
-                {sync.error && <p className="hint warn-text">{sync.error}</p>}
-                <div className="note-actions">
-                  <button className="outline" onClick={sync.syncNow}>지금 동기화</button>
-                  <button className="outline" onClick={sync.signOut}>로그아웃</button>
+                <p className="hint">
+                  {account.status === 'synced'
+                    ? `동기화됨${account.lastSyncedAt ? ` · ${timeText(account.lastSyncedAt)}` : ''}`
+                    : account.status === 'error' ? '동기화 오류' : '연결 중…'}
+                </p>
+                <div className="acct-btns">
+                  <button className="outline" onClick={account.syncNow}>지금 동기화</button>
+                  <button className="outline" onClick={account.signOut}>로그아웃</button>
                 </div>
               </>
             ) : (
-              <>
-                <p className="hint">구글로 로그인하면 이 기기의 찜·숨김·메모·아이 설정이 계정에 저장돼요. 다른 기기에서도 같은 계정으로 로그인하면 똑같이 보여요. 처음 연결할 때는 양쪽 내용을 합쳐요.</p>
-                <button className="primary" disabled={sync.phase === 'loading'} onClick={sync.signIn}>
-                  {sync.phase === 'loading' ? '연결 중…' : 'Google로 로그인'}
-                </button>
-                {sync.error && <p className="hint warn-text">{sync.error}</p>}
-              </>
+              <button className="primary" onClick={account.signIn}>Google로 로그인</button>
             )}
+            {account.error && <p className="hint err">{account.error}</p>}
+            <p className="hint">동기화되는 것: 아이 정보, 요일 선택, 숨긴 강좌, 도서관 정보 수정(차 시간·역·동)</p>
           </section>
         )}
 
-        <div className="ed-list">
-          {settings.kids.map((k) => (
-            <div className="ed-row" key={k.id}>
-              <div className="ed-grid">
-                <label>
-                  이름(구분용)
-                  <input value={k.label} maxLength={8} onChange={(e) => setKid(k.id, { label: e.target.value })} />
+        {kids.map((k) => {
+          const g = gradeOn(k.birthYear, now);
+          return (
+            <section className="kid" key={k.id}>
+              <div className="kid-grid">
+                <label className="field">
+                  <span>이름(구분용)</span>
+                  <input type="text" value={k.name} maxLength={8} onChange={(e) => update(k.id, { name: e.target.value })} />
                 </label>
-                <label>
-                  출생연도
-                  <select value={k.birthYear} onChange={(e) => setKid(k.id, { birthYear: Number(e.target.value) })}>
-                    {YEARS.map((y) => (
-                      <option key={y} value={y}>{y}년생</option>
-                    ))}
+                <label className="field">
+                  <span>출생연도</span>
+                  <select value={k.birthYear} onChange={(e) => update(k.id, { birthYear: Number(e.target.value) })}>
+                    {YEARS.map((y) => (<option key={y} value={y}>{y}년생</option>))}
                   </select>
                 </label>
               </div>
-              <div className="ed-head">
+              <div className="kid-foot">
                 <span className="hint">
-                  지금 <strong>{gradeLabel(gradeOn(k.birthYear, now))}</strong> · 다음 학년도(3월)에는{' '}
-                  <strong>{gradeLabel(gradeOn(k.birthYear, new Date(now.getFullYear() + (now.getMonth() >= 2 ? 1 : 0), 2, 15)))}</strong>
+                  지금 <strong>{stageLabel(g)}</strong> · 다음 학년도(3월)에는 <strong>{stageLabel(g + 1)}</strong>
                 </span>
-                <span className="grow" />
-                {settings.kids.length > 1 && (
-                  <button type="button" className="link-btn danger" onClick={() => removeKid(k.id)}>삭제</button>
-                )}
+                {kids.length > 1 && <button className="link-btn danger" onClick={() => remove(k.id)}>삭제</button>}
               </div>
-            </div>
-          ))}
-        </div>
-        {settings.kids.length < 4 && <button className="outline" onClick={addKid}>+ 아이 추가</button>}
-        <p className="hint">
-          학년은 3월에 올라가요. 각 강좌는 <strong>수업이 시작하는 날의 학년</strong>으로 대상을 판단해요.
-        </p>
-        {sync?.user && (
-          <>
-            <button className="outline" onClick={importKids}>체험 앱에서 아이 정보 가져오기</button>
-            {kidMsg && <p className="hint">{kidMsg}</p>}
-          </>
-        )}
+            </section>
+          );
+        })}
+
+        {kids.length < MAX_KIDS && <button className="outline" onClick={add}>+ 아이 추가</button>}
+        <p className="hint">학년은 3월에 올라가요. 각 강좌는 <strong>수업이 시작되는 날의 학년</strong>으로 대상을 판단해요.</p>
 
         <button className="outline" onClick={onOpenLibs}>도서관 정보 수정 (차 시간 · 지하철역 · 동)</button>
-
-        {(settings.hidden?.length ?? 0) > 0 && (
-          <button className="outline" onClick={() => setSettings({ ...settings, hidden: [] })}>
-            숨긴 강좌 모두 다시 보이게 하기 ({settings.hidden.length})
+        {hiddenTotal > 0 && (
+          <button className="outline" onClick={() => { if (confirm(`숨긴 강좌 ${hiddenTotal}개를 모두 다시 보이게 할까요?`)) onUnhideAll(); }}>
+            숨긴 강좌 모두 다시 보이게 하기 ({hiddenTotal})
           </button>
         )}
-
-        <details className="backup">
-          <summary>다른 기기로 옮기기 (내보내기 / 가져오기)</summary>
-          <div className="backup-body">
-            <p className="hint">설정, 찜, 숨긴 것, 메모를 글 하나로 옮겨요. 폰에서 내보내서 PC에 가져오는 식으로 쓰세요.</p>
-            <button className="outline" onClick={doShareLink}>합치기 링크 복사 (다른 기기에서 열면 합쳐요)</button>
-            <button className="outline" onClick={() => { setExportText(buildExport(settings)); setBackupMsg(''); }}>내보내기 글 만들기</button>
-            {exportText && (
-              <>
-                <textarea readOnly value={exportText} rows={4} onFocus={(e) => e.target.select()} aria-label="내보낸 글" />
-                <button className="outline" onClick={doCopy}>복사</button>
-              </>
-            )}
-            <textarea
-              value={importText}
-              rows={3}
-              placeholder="내보낸 글을 여기에 붙여넣기"
-              aria-label="가져올 글"
-              onChange={(e) => setImportText(e.target.value)}
-            />
-            <button className="outline" disabled={!importText.trim()} onClick={doImport}>가져오기 (현재 설정을 덮어써요)</button>
-            {backupMsg && <p className="hint">{backupMsg}</p>}
-          </div>
-        </details>
-
-        <p className="hint">설정은 이 기기의 브라우저에만 저장되고, 구글 로그인을 했을 때만 계정에 저장돼요.</p>
-        <button className="primary" onClick={onClose}>닫기</button>
+        <p className="hint">설정은 이 기기의 브라우저에 저장되고, 로그인하면 내 계정과만 동기화돼요.</p>
       </div>
     </div>
   );
