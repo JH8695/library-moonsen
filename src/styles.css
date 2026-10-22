@@ -321,3 +321,50 @@ i.cal-pill { min-width: 12px; height: 12px; line-height: 12px; padding: 0; verti
 .pick-name { font-size: 15px; font-weight: 600; }
 .pick-meta { font-size: 12px; color: var(--muted); }
 .pick-n { min-width: 22px; text-align: center; font-size: 12px; font-weight: 700; background: var(--closed-bg); color: var(--closed); border-radius: 999px; padding: 0 6px; }
+
+/* ===== 찜 · 메모 · 검색 · 제목 이동 메뉴 · 숨김 되돌리기 ===== */
+.searchrow { display: flex; gap: 8px; }
+.search { flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font: inherit; color: var(--ink); }
+.fav-toggle { flex: 0 0 auto; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 0 12px; font-weight: 700; white-space: nowrap; }
+.fav-toggle.on { background: #c0392b; border-color: #c0392b; color: #fff; }
+.card-top { flex-wrap: wrap; row-gap: 4px; }
+.heart { border: 0; background: transparent; font-size: 24px; line-height: 1; padding: 0 2px; color: var(--muted); }
+.heart.on { color: #c0392b; }
+.note-btn { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 2px 9px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.note-btn.has { background: #fff3c4; border-color: #e5c453; color: #6d5600; }
+.note-line { margin: 0 0 10px; padding: 7px 10px; border-radius: 10px; background: #fff7d6; color: #17252e; font-size: 13.5px; line-height: 1.5; overflow-wrap: anywhere; }
+.note-title { margin: 0; font-weight: 700; font-size: 15px; overflow-wrap: anywhere; }
+.note-field { display: grid; gap: 6px; font-size: 14px; font-weight: 600; }
+.note-field textarea { width: 100%; box-sizing: border-box; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font: inherit; font-weight: 400; background: var(--bg); color: var(--ink); resize: vertical; }
+.note-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.note-actions .primary { flex: 1 1 100px; }
+.cal-note { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); padding: 0 12px; font-size: 14px; }
+.cal-note:hover { background: var(--bg); }
+.cal-row-note { grid-column: 2; font-size: 12px; padding: 2px 6px; border-radius: 6px; background: #fff7d6; color: #17252e; overflow-wrap: anywhere; }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); z-index: 60; bottom: calc(68px + var(--safe-b)); width: min(420px, calc(100vw - 24px)); display: flex; align-items: center; gap: 10px; padding: 10px 12px 10px 14px; background: var(--ink); color: var(--bg); border-radius: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.3); }
+.toast-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+.toast button { border: 0; background: transparent; color: inherit; font-weight: 700; text-decoration: underline; padding: 6px 4px; }
+@media (min-width: 900px) { .toast { bottom: 16px; } }
+
+.pop-backdrop { position: fixed; inset: 0; z-index: 29; }
+.switcher { position: relative; min-width: 0; }
+.switcher-h { margin: 0; font-size: inherit; }
+.switcher-btn { background: none; border: 0; padding: 0; color: inherit; font: inherit; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; text-align: left; cursor: pointer; }
+.switcher-caret { font-size: 14px; opacity: .8; }
+.switcher-menu { position: absolute; left: 0; top: calc(100% + 8px); z-index: 35; margin: 0; padding: 6px; list-style: none; min-width: 220px; background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,.25); }
+.switcher-item { display: flex; align-items: center; gap: 8px; width: 100%; box-sizing: border-box; padding: 12px; border: 0; border-radius: 8px; background: transparent; color: inherit; font: inherit; font-size: 16px; font-weight: 600; text-decoration: none; text-align: left; }
+.switcher-item:hover, .switcher-item:focus-visible { background: var(--closed-bg); }
+.switcher-item.current { cursor: default; }
+.switcher-check { margin-left: auto; color: var(--open); font-weight: 800; }
+
+/* ===== 좁은 화면(글자를 크게 설정한 폰 포함)에서 좌우 스크롤이 생기지 않게 ===== */
+body { overflow-x: hidden; }
+.app { overflow-x: clip; max-width: 100%; }
+.filters { grid-template-columns: minmax(0, 1fr); }
+.filters > *, .panes, .pane-list > *, .pane-cal-m, .pane-right, .card, .cal { min-width: 0; }
+.tabs button { min-width: 0; padding-left: 0; padding-right: 0; white-space: nowrap; }
+.card, .cal-row { overflow-wrap: anywhere; }
+@media (max-width: 359px) {
+  .tabs button { font-size: 12.5px; }
+  .tabs .n { display: none; }
+}

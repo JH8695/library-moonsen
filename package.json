@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview --host",
     "collect": "node scripts/collect.mjs",
-    "test:parser": "node test/gangnam.test.mjs && node test/yangjae.test.mjs"
+    "test:parser": "node test/gangnam.test.mjs && node test/yangjae.test.mjs",
+    "test": "node test/grade.test.mjs && node test/sync.test.mjs && node test/sync-maps.test.mjs && node test/nlcy.test.mjs && node test/gangnam.test.mjs && node test/yangjae.test.mjs"
   },
   "dependencies": {
     "firebase": "^13.0.0",

@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { gradeOn, stageLabel } from '../lib/grade';
 import { MAX_KIDS } from '../lib/useSettings';
 
@@ -8,7 +9,8 @@ for (let y = thisYear; y >= thisYear - 19; y--) YEARS.push(y);
 const timeText = (d) =>
   d ? new Intl.DateTimeFormat('ko-KR', { timeZone: 'Asia/Seoul', hour: 'numeric', minute: '2-digit' }).format(d) : '';
 
-export default function Settings({ settings, setSettings, onClose, onOpenLibs, account, hiddenTotal, onUnhideAll }) {
+export default function Settings({ settings, setSettings, onClose, onOpenLibs, account, hiddenTotal, onUnhideAll, onImportKids }) {
+  const [kidMsg, setKidMsg] = useState('');
   const kids = settings.kids;
   const now = new Date();
   const setKids = (next) => setSettings({ ...settings, kids: next });
@@ -54,7 +56,7 @@ export default function Settings({ settings, setSettings, onClose, onOpenLibs, a
               <button className="primary" onClick={account.signIn}>Google로 로그인</button>
             )}
             {account.error && <p className="hint err">{account.error}</p>}
-            <p className="hint">동기화되는 것: 아이 정보, 요일 선택, 숨긴 강좌, 도서관 정보 수정(차 시간·역·동)</p>
+            <p className="hint">동기화되는 것: 아이 정보, 요일 선택, 숨긴 강좌, 찜, 메모, 도서관 정보 수정(차 시간·역·동)</p>
           </section>
         )}
 
@@ -86,6 +88,12 @@ export default function Settings({ settings, setSettings, onClose, onOpenLibs, a
 
         {kids.length < MAX_KIDS && <button className="outline" onClick={add}>+ 아이 추가</button>}
         <p className="hint">학년은 3월에 올라가요. 각 강좌는 <strong>수업이 시작되는 날의 학년</strong>으로 대상을 판단해요.</p>
+        {account?.user && onImportKids && (
+          <>
+            <button className="outline" onClick={async () => setKidMsg((await onImportKids()) || '')}>체험 앱에서 아이 정보 가져오기</button>
+            {kidMsg && <p className="hint">{kidMsg}</p>}
+          </>
+        )}
 
         <button className="outline" onClick={onOpenLibs}>도서관 정보 수정 (차 시간 · 지하철역 · 동)</button>
         {hiddenTotal > 0 && (

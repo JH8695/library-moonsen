@@ -104,8 +104,31 @@ export async function createStore(uid) {
         if (e.code !== 'not-found') throw e;
       }
     },
+    // 찜·메모처럼 { 강좌id: 값 } 모양의 항목은 강좌 하나씩 추가/삭제 (숨김과 같은 방식: 두 기기가 동시에 바꿔도 서로 안 지워짐)
+    async putMap(section, id, value) {
+      try {
+        await fsM.updateDoc(ref, new fsM.FieldPath(section, id), value);
+      } catch (e) {
+        if (e.code === 'not-found') await fsM.setDoc(ref, { [section]: { [id]: value } }, { merge: true });
+        else throw e;
+      }
+    },
+    async removeMap(section, id) {
+      try {
+        await fsM.updateDoc(ref, new fsM.FieldPath(section, id), fsM.deleteField());
+      } catch (e) {
+        if (e.code !== 'not-found') throw e;
+      }
+    },
     async putSection(name, value) {
       await fsM.setDoc(ref, { [name]: value, updatedAt: fsM.serverTimestamp() }, { mergeFields: [name, 'updatedAt'] });
     },
   };
+}
+
+// "서울 아이 체험" 앱에 저장된 아이 정보 읽기 (같은 구글 계정, users/{uid} 문서의 data.kids). 읽기만 해요.
+export async function readSharedKids(uid) {
+  const { fsM, db } = await load();
+  const snap = await fsM.getDoc(fsM.doc(db, 'users', uid));
+  return snap.exists() ? snap.data()?.data?.kids ?? null : null;
 }

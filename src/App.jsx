@@ -5,6 +5,8 @@ import { useSettings, pickPrefs } from './lib/useSettings';
 import { useCourses } from './lib/useCourses';
 import { useLibraries } from './lib/useLibraries';
 import { useHidden } from './lib/useHidden';
+import { useFavs } from './lib/useFavs';
+import { useNotes } from './lib/useNotes';
 import { useCloudSync } from './lib/useCloudSync';
 import { DAY_LABELS, DAY_ORDER, classWeekdays, passesDays } from './lib/weekdays';
 import CourseCard from './components/CourseCard';
@@ -13,6 +15,8 @@ import Settings from './components/Settings';
 import LibraryEditor from './components/LibraryEditor';
 import LibraryPicker from './components/LibraryPicker';
 import CalendarView from './components/CalendarView';
+import AppSwitcher from './components/AppSwitcher';
+import NoteSheet from './components/NoteSheet';
 
 const TABS = [
   { id: 'all', label: '전체' },
@@ -45,8 +49,12 @@ export default function App() {
   const L = useLibraries();
   const { libs, byId } = L;
   const H = useHidden();
+  const F = useFavs();
+  const N = useNotes();
   const cloud = useCloudSync({
     hidden: [H.hidden, H.setHidden],
+    favs: [F.favs, F.setFavs],
+    notes: [N.notes, N.setNotes],
     prefs: [settings, (v) => setSettings((prev) => ({ ...prev, ...pickPrefs(v) }))],
     libs: [L.overrides, L.setOverrides],
   });
@@ -59,7 +67,11 @@ export default function App() {
   const [selectedLib, setSelectedLib] = useState(null);
   const [showClosed, setShowClosed] = useState(false);
   const [showAllTargets, setShowAllTargets] = useState(false);
-  const [showHidden, setShowHidden] = useState(false);
+  const [showHidden, setShowHidden] = useState(false); // 숨긴 강좌만 보기(다시 보이게 하려고)
+  const [query, setQuery] = useState('');
+  const [favOnly, setFavOnly] = useState(false);
+  const [noteFor, setNoteFor] = useState(null); // 메모 창을 연 강좌 id
+  const [toast, setToast] = useState(null); // 방금 숨긴 강좌 { id, text } — 되돌리기 안내
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [editor, setEditor] = useState(null); // null | { focusId: string | null }
   const days = settings.days ?? [];
@@ -92,18 +104,31 @@ export default function App() {
     });
   }, [courses, kids, now]);
 
-  // 대상 + 상태 필터 (도서관/지역 선택 전) → 지도 핀 개수의 기준
-  const base = useMemo(() => {
-    return enriched.filter(({ course, match, daySet }) => {
-      if (!showAllTargets && match.result === 'nomatch') return false;
-      if (!showHidden && H.hidden[course.id]) return false;
-      if (!passesDays(effDays, daySet)) return false;
-      const s = course.status;
-      if (tab === 'open') return s === 'open';
-      if (tab === 'upcoming') return s === 'upcoming';
-      return s === 'open' || s === 'upcoming' || showClosed;
-    });
-  }, [enriched, tab, showClosed, showAllTargets, showHidden, H.hidden, effDays]);
+  // 검색어: 강좌명·도서관 이름에서 찾음 (띄어쓰기·대소문자 무시)
+  const norm = (x) => (x ?? '').toLowerCase().replace(/\s+/g, '');
+  const q = norm(query);
+  // 상태 탭을 뺀 공통 조건
+  const passBase = ({ course, match, daySet }) => {
+    if (q && !norm(`${course.title} ${byId[course.libraryId]?.name ?? ''}`).includes(q)) return false;
+    const hid = !!H.hidden[course.id];
+    if (showHidden) return hid; // 숨긴 것만 보여줌
+    if (hid) return false;
+    if (favOnly) return !!F.favs[course.id]; // 찜 목록은 대상·요일 조건과 상관없이 보여줌
+    if (!showAllTargets && match.result === 'nomatch') return false;
+    return passesDays(effDays, daySet);
+  };
+  const statusOk = (course, tabId) => {
+    const s = course.status;
+    if (tabId === 'open') return s === 'open';
+    if (tabId === 'upcoming') return s === 'upcoming';
+    return s === 'open' || s === 'upcoming' || showClosed || favOnly || showHidden;
+  };
+
+  // 조건 + 상태 필터 (도서관/지역 선택 전) → 지도 핀 개수의 기준
+  const base = useMemo(
+    () => enriched.filter((e) => passBase(e) && statusOk(e.course, tab)),
+    [enriched, tab, showClosed, showAllTargets, showHidden, H.hidden, effDays, q, favOnly, F.favs], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
   // 도서관 선택 창에 보여줄 도서관별 강좌 수 (도서관 선택 전 기준)
   const baseCounts = useMemo(() => {
@@ -122,19 +147,13 @@ export default function App() {
   }, [baseSel]);
 
   const tabCounts = useMemo(() => {
-    const ok = enriched.filter(
-      (e) =>
-        (showAllTargets || e.match.result !== 'nomatch') &&
-        (showHidden || !H.hidden[e.course.id]) &&
-        !exSet.has(e.course.libraryId) &&
-        passesDays(effDays, e.daySet),
-    );
+    const ok = enriched.filter((e) => passBase(e) && !exSet.has(e.course.libraryId));
     return {
-      all: ok.filter((e) => ['open', 'upcoming'].includes(e.course.status) || showClosed).length,
+      all: ok.filter((e) => statusOk(e.course, 'all')).length,
       open: ok.filter((e) => e.course.status === 'open').length,
       upcoming: ok.filter((e) => e.course.status === 'upcoming').length,
     };
-  }, [enriched, showClosed, showAllTargets, showHidden, H.hidden, effDays, exSet]);
+  }, [enriched, showClosed, showAllTargets, showHidden, H.hidden, effDays, exSet, q, favOnly, F.favs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const list = useMemo(() => {
     const rows = baseSel.filter(({ course }) => !selectedLib || course.libraryId === selectedLib);
@@ -153,7 +172,34 @@ export default function App() {
   }, [courses]);
 
   const hiddenCount = useMemo(() => courses.filter((c) => H.hidden[c.id]).length, [courses, H.hidden]);
-  const toggleHide = (id) => (H.hidden[id] ? H.unhide(id) : H.hide(id));
+  const favCount = useMemo(() => courses.filter((c) => F.favs[c.id]).length, [courses, F.favs]);
+  // 숨기기: 찜해 둔 것이면 찜도 풀고, "숨겼어요 · 되돌리기" 안내를 잠깐 보여줌
+  const hideCourse = (c) => {
+    H.hide(c.id);
+    F.remove(c.id);
+    setToast({ id: c.id, text: `숨겼어요 · ${c.title}` });
+  };
+  const toggleHide = (id) => {
+    if (H.hidden[id]) { H.unhide(id); return; }
+    const c = courses.find((x) => x.id === id);
+    if (c) hideCourse(c); else H.hide(id);
+  };
+  useEffect(() => {
+    if (!toast) return undefined;
+    const id = setTimeout(() => setToast(null), 7000);
+    return () => clearTimeout(id);
+  }, [toast]);
+
+  // 체험 앱에 입력해 둔 아이 정보 가져오기 (같은 구글 계정). 체험 앱은 이름을 label 로 저장해요.
+  const importKids = async () => {
+    const ks = await cloud.fetchSharedKids();
+    if (!ks?.length) return '체험 앱에 저장된 아이 정보를 찾지 못했어요. 체험 앱에서 같은 구글 계정으로 로그인해 동기화한 뒤 다시 눌러 주세요.';
+    const picked = pickPrefs({ kids: ks.map((k) => ({ id: k.id, name: k.label ?? k.name, birthYear: k.birthYear })) }).kids;
+    if (!picked) return '가져온 아이 정보를 읽지 못했어요.';
+    if (!window.confirm(`체험 앱의 아이 ${picked.length}명으로 바꿀까요?\n${picked.map((k) => `${k.name} ${k.birthYear}년생`).join(', ')}`)) return '';
+    setSettings((prev) => ({ ...prev, kids: picked }));
+    return '가져왔어요.';
+  };
 
   const renderCard = ({ course, match, kidResults }) => (
     <CourseCard
@@ -165,6 +211,10 @@ export default function App() {
       onEditLib={(id) => setEditor({ focusId: id })}
       isHidden={!!H.hidden[course.id]}
       onToggleHide={toggleHide}
+      fav={!!F.favs[course.id]}
+      onToggleFav={F.toggle}
+      note={N.notes[course.id]}
+      onNote={() => setNoteFor(course.id)}
     />
   );
 
@@ -178,6 +228,7 @@ export default function App() {
   const renderCompact = ({ course }) => {
     const time = fmtStartTime(course);
     const hid = !!H.hidden[course.id];
+    const note = N.notes[course.id];
     return (
       <div key={course.id} className={`cal-row ${course.status}${hid ? ' is-hidden' : ''}`}>
         <a className="cal-row-main" href={course.url} target="_blank" rel="noopener noreferrer">
@@ -188,7 +239,12 @@ export default function App() {
           <span className="cal-row-sub">
             {time && `${time} · `}{byId[course.libraryId]?.name ?? ''}
           </span>
+          {note?.text && <span className="cal-row-note">📝 {note.text}</span>}
         </a>
+        {/* 링크 바깥에 둔 버튼들: 눌러도 도서관 사이트로 넘어가지 않아요 */}
+        <button type="button" className="cal-note" aria-label="메모" title="메모" onClick={() => setNoteFor(course.id)}>
+          {note ? '📝' : '✎'}
+        </button>
         <button
           type="button"
           className="cal-hide"
@@ -208,10 +264,7 @@ export default function App() {
   return (
     <div className="app">
       <header className="top">
-        <div>
-          <h1>도서관 강좌</h1>
-          <p className="sub">강남구립 · 양재도서관 문화강좌</p>
-        </div>
+        <AppSwitcher current="library" title="도서관 강좌" sub="강남구립 · 양재도서관 문화강좌" />
         <div className="top-right">
           {cloud.configured && (
             <button
@@ -241,6 +294,20 @@ export default function App() {
       )}
 
       <nav className="filters" aria-label="필터">
+        <div className="searchrow">
+          <input
+            type="search"
+            className="search"
+            placeholder="강좌명·도서관 검색"
+            aria-label="강좌명·도서관 검색"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <button type="button" className={`fav-toggle${favOnly ? ' on' : ''}`} aria-pressed={favOnly} onClick={() => setFavOnly((v) => !v)}>
+            {favOnly ? '♥' : '♡'} 찜 {favCount}
+          </button>
+        </div>
+
         <div className="tabs" role="tablist">
           {TABS.map((x) => (
             <button
@@ -290,7 +357,7 @@ export default function App() {
           <label><input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} /> 접수종료·대기 포함</label>
           <label><input type="checkbox" checked={showAllTargets} onChange={(e) => setShowAllTargets(e.target.checked)} /> 대상 안 맞는 강좌 포함</label>
           {(hiddenCount > 0 || showHidden) && (
-            <label><input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> 숨긴 강좌 다시 보기 ({hiddenCount})</label>
+            <label><input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> 숨긴 것만 보기 ({hiddenCount})</label>
           )}
         </div>
 
@@ -309,8 +376,11 @@ export default function App() {
               <h3>조건에 맞는 강좌가 없어요</h3>
               <p>
                 수집된 강좌 {courses.length}건 중 지금 조건에 맞는 게 없어요.
+                {showHidden && ' 숨긴 강좌가 없어요.'}
+                {favOnly && ' 찜한 강좌가 없거나 검색어에 맞는 게 없어요.'}
+                {q && ' 검색어를 지워 보세요.'}
                 {days.length > 0 && ' 선택한 수업 요일을 해제하면 더 보여요.'}
-                {!showAllTargets && ' 위의 "대상 안 맞는 강좌 포함"을 켜면 전체를 볼 수 있어요.'}
+                {!showAllTargets && !favOnly && ' 위의 "대상 안 맞는 강좌 포함"을 켜면 전체를 볼 수 있어요.'}
               </p>
             </div>
           ) : (
@@ -372,6 +442,23 @@ export default function App() {
         </div>
       )}
 
+      {toast && (
+        <div className="toast" role="status">
+          <span className="toast-text">{toast.text}</span>
+          <button type="button" onClick={() => { H.unhide(toast.id); setToast(null); }}>되돌리기</button>
+        </div>
+      )}
+
+      {noteFor && (
+        <NoteSheet
+          key={noteFor}
+          title={courses.find((c) => c.id === noteFor)?.title ?? ''}
+          note={N.notes[noteFor] ?? null}
+          onSave={(n) => N.save(noteFor, n)}
+          onClose={() => setNoteFor(null)}
+        />
+      )}
+
       {settingsOpen && (
         <Settings
           settings={settings}
@@ -381,6 +468,7 @@ export default function App() {
           onClose={() => setSettingsOpen(false)}
           onOpenLibs={() => { setSettingsOpen(false); setEditor({ focusId: null }); }}
           account={cloud}
+          onImportKids={importKids}
         />
       )}
 

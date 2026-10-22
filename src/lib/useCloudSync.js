@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { cloudConfigured, watchAuth, signInGoogle, signOutUser, createStore, friendlyError } from './cloud';
+import { cloudConfigured, watchAuth, signInGoogle, signOutUser, createStore, friendlyError, readSharedKids } from './cloud';
 import { createSyncEngine } from './syncEngine';
 
 /**
  * 로그인 + 동기화 연결.
- * local = { hidden: [값, 설정함수], prefs: [...], libs: [...] }  (각각 이 기기의 상태)
+ * local = { hidden: [값, 설정함수], favs: [...], notes: [...], prefs: [...], libs: [...] }  (각각 이 기기의 상태)
  * 반환: { configured, user, status, error, signIn, signOut }
  *   status: off(설정 없음) | connecting | signedOut | synced | error
  */
@@ -50,8 +50,8 @@ export function useCloudSync(local) {
           storage: window.localStorage,
           flagKey: `libcourse:cloud-synced:${user.uid}`,
           local: {
-            get: (sec) => latest.current[sec][0],
-            set: (sec, v) => latest.current[sec][1](v),
+            get: (sec) => latest.current[sec]?.[0],
+            set: (sec, v) => latest.current[sec]?.[1](v),
           },
           onStatus: (s, e) => {
             if (dead) return;
@@ -71,9 +71,13 @@ export function useCloudSync(local) {
 
   // 이 기기에서 값이 바뀌면 엔진에 알림
   const h = local.hidden[0];
+  const f = local.favs?.[0];
+  const n = local.notes?.[0];
   const p = local.prefs[0];
   const l = local.libs[0];
   useEffect(() => { engineRef.current?.localChanged('hidden', h); }, [h]);
+  useEffect(() => { if (f !== undefined) engineRef.current?.localChanged('favs', f); }, [f]);
+  useEffect(() => { if (n !== undefined) engineRef.current?.localChanged('notes', n); }, [n]);
   useEffect(() => { engineRef.current?.localChanged('prefs', p); }, [p]);
   useEffect(() => { engineRef.current?.localChanged('libs', l); }, [l]);
 
@@ -84,6 +88,11 @@ export function useCloudSync(local) {
     error,
     lastSyncedAt,
     syncNow: () => engineRef.current?.refresh(),
+    // 서울 아이 체험 앱에 저장해 둔 아이 정보 (같은 계정)
+    fetchSharedKids: async () => {
+      if (!user) return null;
+      try { return await readSharedKids(user.uid); } catch (e) { setError(friendlyError(e)); return null; }
+    },
     signIn: () => signInGoogle().catch((e) => { setStatus('error'); setError(friendlyError(e)); }),
     signOut: () => signOutUser().catch((e) => setError(friendlyError(e))),
   };

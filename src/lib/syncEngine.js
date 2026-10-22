@@ -2,6 +2,8 @@
 //
 // 동기화하는 것 (섹션):
 //   hidden : 숨긴 강좌  { 강좌id: 숨긴시각 }     → 강좌 하나씩 추가/삭제 (두 기기가 동시에 숨겨도 서로 안 지워짐)
+//   favs   : 찜한 강좌  { 강좌id: 찜한시각 }     → hidden 과 같은 방식
+//   notes  : 강좌 메모  { 강좌id: {text, ts} }   → hidden 과 같은 방식 (같은 강좌를 동시에 고치면 마지막 저장이 이김)
 //   prefs  : 출생연도·학년·요일 선택             → 통째로 마지막 저장이 이김
 //   libs   : 도서관 정보 수정(차 시간·역·동)     → 통째로 마지막 저장이 이김
 //
@@ -20,8 +22,12 @@ const sortKeys = (v) => {
 export const same = (a, b) => JSON.stringify(sortKeys(a ?? null)) === JSON.stringify(sortKeys(b ?? null));
 const isEmpty = (v) => v == null || (typeof v === 'object' && Object.keys(v).length === 0);
 
+// 숨김처럼 강좌 하나씩 추가/삭제하는 항목들 (앱이 이 항목을 안 넘기면 건너뜀)
+const MAP_SECS = ['favs', 'notes'];
+
 export function createSyncEngine({ store, local, storage, flagKey, onStatus }) {
-  let lastRemote = { hidden: {}, prefs: undefined, libs: undefined };
+  let lastRemote = { hidden: {}, favs: {}, notes: {}, prefs: undefined, libs: undefined };
+  const hasSec = (sec) => local.get(sec) !== undefined;
   let synced = false;
   let unsub = null;
   const fail = (e) => onStatus?.('error', e);
@@ -33,6 +39,14 @@ export function createSyncEngine({ store, local, storage, flagKey, onStatus }) {
     const merged = { ...lh, ...rh };
     if (!same(merged, lh)) local.set('hidden', merged);
     for (const id of Object.keys(lh)) if (!(id in rh)) run(store.hide(id, lh[id]));
+    for (const sec of MAP_SECS) {
+      if (!hasSec(sec)) continue;
+      const lm = local.get(sec) || {};
+      const rm = d[sec] || {};
+      const mm = { ...lm, ...rm }; // 처음 연결할 때는 합집합 (같은 강좌는 계정 것)
+      if (!same(mm, lm)) local.set(sec, mm);
+      for (const id of Object.keys(lm)) if (!(id in rm)) run(store.putMap(sec, id, lm[id]));
+    }
     for (const sec of ['prefs', 'libs']) {
       if (d[sec] !== undefined) local.set(sec, d[sec]);
       else if (!isEmpty(local.get(sec))) run(store.putSection(sec, local.get(sec)));
@@ -43,6 +57,9 @@ export function createSyncEngine({ store, local, storage, flagKey, onStatus }) {
   function applyRemote(d) {
     const rh = d.hidden || {};
     if (!same(rh, local.get('hidden') || {})) local.set('hidden', rh);
+    for (const sec of MAP_SECS) {
+      if (hasSec(sec) && !same(d[sec] || {}, local.get(sec) || {})) local.set(sec, d[sec] || {});
+    }
     for (const sec of ['prefs', 'libs']) {
       if (d[sec] !== undefined && !same(d[sec], local.get(sec))) local.set(sec, d[sec]);
     }
@@ -54,7 +71,7 @@ export function createSyncEngine({ store, local, storage, flagKey, onStatus }) {
       if (!storage.getItem(flagKey)) firstSync(d);
       else applyRemote(d);
     } catch (e) { fail(e); return; }
-    lastRemote = { hidden: { ...(d.hidden || {}) }, prefs: d.prefs, libs: d.libs };
+    lastRemote = { hidden: { ...(d.hidden || {}) }, favs: { ...(d.favs || {}) }, notes: { ...(d.notes || {}) }, prefs: d.prefs, libs: d.libs };
     synced = true;
     onStatus?.('synced');
   }
@@ -66,6 +83,11 @@ export function createSyncEngine({ store, local, storage, flagKey, onStatus }) {
       const rem = lastRemote.hidden || {};
       for (const id of Object.keys(cur)) if (!(id in rem)) run(store.hide(id, cur[id]));
       for (const id of Object.keys(rem)) if (!(id in cur)) run(store.unhide(id));
+    } else if (MAP_SECS.includes(sec)) {
+      const cur = value || {};
+      const rem = lastRemote[sec] || {};
+      for (const id of Object.keys(cur)) if (!same(cur[id], rem[id])) run(store.putMap(sec, id, cur[id]));
+      for (const id of Object.keys(rem)) if (!(id in cur)) run(store.removeMap(sec, id));
     } else if (!same(value, lastRemote[sec])) {
       if (lastRemote[sec] === undefined && isEmpty(value)) return; // 비어 있는 값을 굳이 만들지 않음
       run(store.putSection(sec, value));
@@ -77,7 +99,7 @@ export function createSyncEngine({ store, local, storage, flagKey, onStatus }) {
     if (!synced || !store.fetchServer) return;
     try {
       onStatus?.('connecting');
-      for (const sec of ['hidden', 'prefs', 'libs']) localChanged(sec, local.get(sec));
+      for (const sec of ['hidden', ...MAP_SECS, 'prefs', 'libs']) if (hasSec(sec)) localChanged(sec, local.get(sec));
       await store.waitWrites?.(); // 방금 올린 변경이 서버에 반영될 때까지 기다린 뒤 읽기 (옛 값으로 덮어쓰지 않도록)
       onRemote(await store.fetchServer());
     } catch (e) { fail(e); }

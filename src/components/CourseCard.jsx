@@ -32,7 +32,7 @@ export function DriveInfo({ lib, onEdit }) {
   );
 }
 
-export default function CourseCard({ course, lib, match, kidResults = [], onEditLib, isHidden = false, onToggleHide }) {
+export default function CourseCard({ course, lib, match, kidResults = [], onEditLib, isHidden = false, onToggleHide, fav = false, onToggleFav, note, onNote }) {
   const st = STATUS[course.status] ?? STATUS.closed;
   const dday =
     course.status === 'upcoming' && course.applyStart ? daysUntil(course.applyStart) : null;
@@ -42,6 +42,11 @@ export default function CourseCard({ course, lib, match, kidResults = [], onEdit
     <article className={`card ${st.cls}${isHidden ? ' is-hidden' : ''}`}>
       <div className="card-top">
         <span className={`badge ${st.cls}`}>{st.label}</span>
+        {onNote && (
+          <button type="button" className={`note-btn${note ? ' has' : ''}`} onClick={onNote} aria-label={note ? '메모 보기·수정' : '메모 추가'}>
+            📝 메모
+          </button>
+        )}
         {dday != null && dday >= 0 && (
           <span className="dday">{dday === 0 ? '오늘 접수 시작' : `${dday}일 뒤 접수 시작`}</span>
         )}
@@ -52,6 +57,11 @@ export default function CourseCard({ course, lib, match, kidResults = [], onEdit
             {course.waitCapacity ? ` (대기 ${course.waitApplied ?? 0}/${course.waitCapacity})` : ''}
           </span>
         )}
+        {onToggleFav && (
+          <button type="button" className={`heart${fav ? ' on' : ''}`} aria-pressed={fav} aria-label={fav ? '찜 해제' : '찜하기'} onClick={() => onToggleFav(course.id)}>
+            {fav ? '♥' : '♡'}
+          </button>
+        )}
       </div>
 
       <h3 className="card-title">{course.title}</h3>
@@ -60,6 +70,8 @@ export default function CourseCard({ course, lib, match, kidResults = [], onEdit
         <strong>{lib?.name ?? course.libraryId}</strong>
         <DriveInfo lib={lib} onEdit={onEditLib} />
       </div>
+
+      {note?.text && <p className="note-line">📝 {note.text}</p>}
 
       <dl className="rows">
         <div>
