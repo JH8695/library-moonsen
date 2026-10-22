@@ -266,17 +266,22 @@ export default function App() {
       <header className="top">
         <AppSwitcher current="library" title="도서관 강좌" sub="강남구립 · 양재도서관 문화강좌" />
         <div className="top-right">
-          {cloud.configured && (
-            <button
-              className={`icon-btn sync ${cloud.status}`}
-              onClick={() => setSettingsOpen(true)}
-              aria-label={`동기화: ${cloud.status === 'synced' ? '동기화됨' : cloud.status === 'error' ? '오류' : cloud.status === 'signedOut' ? '로그인 필요' : '연결 중'}`}
-              title={cloud.status === 'synced' ? '동기화됨' : cloud.status === 'error' ? '동기화 오류' : cloud.status === 'signedOut' ? '로그인하면 폰·PC가 연동돼요' : '연결 중…'}
-            >
-              ☁<i className="sync-dot" />
-            </button>
-          )}
-          <button className="icon-btn" onClick={() => setSettingsOpen(true)} aria-label="설정" title="설정">⚙</button>
+          {/* 설정 버튼 하나: 동기화 상태는 버튼 모서리의 점으로 보여줘요 (초록=동기화됨, 노랑=연결 중, 빨강=오류) */}
+          {(() => {
+            const sync = cloud.configured
+              ? cloud.status === 'synced' ? '동기화됨' : cloud.status === 'error' ? '동기화 오류' : cloud.status === 'signedOut' ? '로그인하면 폰·PC가 연동돼요' : '연결 중…'
+              : '';
+            return (
+              <button
+                className={`icon-btn${cloud.configured ? ` sync ${cloud.status}` : ''}`}
+                onClick={() => setSettingsOpen(true)}
+                aria-label={sync ? `설정 (${sync})` : '설정'}
+                title={sync ? `설정 · ${sync}` : '설정'}
+              >
+                ⚙{cloud.configured && <i className="sync-dot" />}
+              </button>
+            );
+          })()}
         </div>
       </header>
 
